@@ -60,19 +60,7 @@ export default function ViewConfigSearchPage() {
             </p>
           </div>
 
-          <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <h4 className="font-semibold text-yellow-900 mb-2">⚠️ Data Integrity Issue: Markers Excluded</h4>
-            <p className="text-yellow-800 text-sm mb-3">
-              Marker data is excluded from search results due to NaN values in position fields (PositionTop, PositionLeft, etc.) 
-              in the database. This is a data quality issue that should be addressed.
-            </p>
-            <p className="text-yellow-800 text-sm">
-              To fetch markers separately with automatic NaN handling, use:
-            </p>
-            <p className="font-mono text-yellow-900 text-xs bg-yellow-100 p-2 rounded mt-2">
-              GET /api/viewconfig/markers?layout2dId=YOUR_LAYOUT_2D_UUID
-            </p>
-          </div>
+
         </div>
       </div>
     </div>

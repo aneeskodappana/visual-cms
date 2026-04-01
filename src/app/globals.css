@@ -25,3 +25,23 @@ body {
     text-wrap: balance;
   }
 }
+
+/* Override react-zoom-pan-pinch fit-content constraint */
+.react-transform-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+}
+
+.react-transform-component {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+}
+
+[class*="transform-component-module_wrapper"] {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}

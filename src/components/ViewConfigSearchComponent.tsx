@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronRight, Search, Copy, Check } from 'lucide-react';
 import { constructCdnUrl, constructMarkerIconUrl, getViewTypeName, getMarkerTypeName, getMarkerSubTypeName, ViewTypes } from '@/lib/cdnUtils';
 
@@ -31,6 +33,9 @@ interface ViewConfigResult {
 }
 
 export function ViewConfigSearchComponent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [codeInput, setCodeInput] = useState('');
   const [uuidInput, setUuidInput] = useState('');
   const [codeMatchType, setCodeMatchType] = useState<'ilike' | 'exact'>('exact');
@@ -41,6 +46,75 @@ export function ViewConfigSearchComponent() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
+
+  // Initialize from URL params on mount
+  useEffect(() => {
+    const code = searchParams.get('code') || '';
+    const uuid = searchParams.get('uuid') || '';
+    const matchType = (searchParams.get('matchType') as 'ilike' | 'exact') || 'exact';
+    const kind = searchParams.get('kind');
+
+    setCodeInput(code);
+    setUuidInput(uuid);
+    setCodeMatchType(matchType);
+    setSelectedKind(kind ? Number(kind) : '');
+
+    // If we have search params, perform the search
+    if (code || uuid || kind) {
+      performSearch(code, uuid, matchType, kind ? Number(kind) : '');
+    }
+  }, [searchParams]);
+
+  const updateURL = (code: string, uuid: string, matchType: string, kind: number | string) => {
+    const params = new URLSearchParams();
+    if (code) params.append('code', code);
+    if (uuid) params.append('uuid', uuid);
+    if (matchType) params.append('matchType', matchType);
+    if (kind) params.append('kind', String(kind));
+
+    // Update URL without navigation
+    const queryString = params.toString();
+    window.history.replaceState(null, '', queryString ? `?${queryString}` : '/viewconfig-search');
+  };
+
+  const performSearch = async (code: string, uuid: string, matchType: string, kind: number | string) => {
+    if (!code && !uuid && !kind) {
+      setError('Please enter a code, UUID, or select a kind to search');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams();
+      if (code) {
+        params.append('code', code);
+        params.append('codeMatchType', matchType);
+      }
+      if (uuid) params.append('uuid', uuid);
+      if (kind) params.append('kind', String(kind));
+
+      const response = await fetch(`/api/viewconfig/search?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Search failed');
+      }
+
+      setResults(data.data || []);
+      if (data.data?.length === 0) {
+        setError('No results found');
+      }
+
+      // Update URL after successful search
+      updateURL(code, uuid, matchType, kind);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const copyToClipboard = (text: string, cellId: string) => {
     navigator.clipboard.writeText(text);
@@ -126,39 +200,7 @@ export function ViewConfigSearchComponent() {
   };
 
   const handleSearch = async () => {
-    if (!codeInput && !uuidInput && selectedKind === '') {
-      setError('Please enter a code, UUID, or select a kind to search');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const params = new URLSearchParams();
-      if (codeInput) {
-        params.append('code', codeInput);
-        params.append('codeMatchType', codeMatchType);
-      }
-      if (uuidInput) params.append('uuid', uuidInput);
-      if (selectedKind !== '') params.append('kind', String(selectedKind));
-
-      const response = await fetch(`/api/viewconfig/search?${params}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Search failed');
-      }
-
-      setResults(data.data || []);
-      if (data.data?.length === 0) {
-        setError('No results found');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
+    performSearch(codeInput, uuidInput, codeMatchType, selectedKind);
   };
 
   const renderLayout2DTable = (layout2ds: any[], resultId: string, cdnBaseUrl?: string) => {
@@ -630,11 +672,22 @@ export function ViewConfigSearchComponent() {
                     </p>
                   </div>
 
-                  {result.HasGallery && (
-                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
-                      Has Gallery
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {result.Layout2Ds && result.Layout2Ds.length > 0 && (
+                      <Link
+                        href={`/viewconfig/${result.Id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium hover:bg-blue-200 transition-colors"
+                      >
+                        View Layout 2D
+                      </Link>
+                    )}
+                    {result.HasGallery && (
+                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                        Has Gallery
+                      </span>
+                    )}
+                  </div>
                 </button>
 
                 {expandedIds.has(result.Id) && (
