@@ -126,7 +126,14 @@ function MarkerOverlay({
               pointerEvents: 'auto',
             }}
             onPointerDown={(e) => isEditMode ? handlePointerDown(e, marker.Id) : undefined}
-            onClick={() => !isEditMode && onSelectMarker(marker)}
+            onClick={() => {
+              if (!isEditMode) {
+                const query = `SELECT * FROM "Markers" WHERE "Id" = '${marker.Id}'::uuid;`;
+                navigator.clipboard.writeText(query);
+              } else {
+                onSelectMarker(marker);
+              }
+            }}
             title={marker.Title || marker.Code}
           >
             {isEditMode && hasChanged && (
@@ -459,8 +466,28 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
         </div>
         <div className="max-w-7xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900">{viewConfig.Title || 'Untitled'}</h1>
-          <p className="text-gray-600 mt-2">
+          <p className="text-gray-600 mt-2 flex items-center gap-2">
             Code: {viewConfig.Code} | ID: {viewConfig.Id}
+            <button
+              onClick={() => {
+                const query = `SELECT * FROM "ViewConfigs" WHERE "Code" = '${viewConfig.Code}';`;
+                navigator.clipboard.writeText(query);
+              }}
+              className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              title="Copy SELECT * query for Code"
+            >
+              Copy Code Query
+            </button>
+            <button
+              onClick={() => {
+                const query = `SELECT * FROM "ViewConfigs" WHERE "Id" = '${viewConfig.Id}'::uuid;`;
+                navigator.clipboard.writeText(query);
+              }}
+              className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              title="Copy SELECT * query for ID"
+            >
+              Copy ID Query
+            </button>
           </p>
         </div>
       </div>
