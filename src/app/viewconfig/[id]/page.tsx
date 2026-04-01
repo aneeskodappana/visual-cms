@@ -30,6 +30,7 @@ interface Marker {
 interface ViewConfig {
   Id: string;
   Title: string;
+  Subtitle: string;
   Code: string;
   CdnBaseUrl: string;
   Layout2Ds: Layout2D[];
@@ -176,6 +177,103 @@ function MarkerOverlay({
   );
 }
 
+function TitleConfirmationModal({
+  oldTitle,
+  oldSubtitle,
+  newTitle,
+  newSubtitle,
+  viewConfigId,
+  onConfirm,
+  onCancel,
+  isSaving,
+}: {
+  oldTitle: string;
+  oldSubtitle: string;
+  newTitle: string;
+  newSubtitle: string;
+  viewConfigId: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) {
+  const hasChanges = oldTitle !== newTitle || oldSubtitle !== newSubtitle;
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full flex flex-col">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-900">Confirm Title Changes</h2>
+          <p className="text-sm text-gray-500 mt-1">ViewConfig title/subtitle modifications</p>
+        </div>
+
+        <div className="overflow-auto flex-1 p-6">
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Changes</h3>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Field</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Old Value</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">New Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {oldTitle !== newTitle && (
+                    <tr className="border-b">
+                      <td className="py-3 px-3 font-medium text-gray-700">Title</td>
+                      <td className="py-3 font-mono text-gray-500 text-xs">{oldTitle || '(empty)'}</td>
+                      <td className="py-3 font-mono text-green-600 text-xs">{newTitle || '(empty)'}</td>
+                    </tr>
+                  )}
+                  {oldSubtitle !== newSubtitle && (
+                    <tr className="border-b">
+                      <td className="py-3 px-3 font-medium text-gray-700">Subtitle</td>
+                      <td className="py-3 font-mono text-gray-500 text-xs">{oldSubtitle || '(empty)'}</td>
+                      <td className="py-3 font-mono text-green-600 text-xs">{newSubtitle || '(empty)'}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">SQL Query</h3>
+              <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto">
+                UPDATE "ViewConfigs"<br />
+                &nbsp;&nbsp;SET "Title" = {newTitle ? `'${newTitle}'` : 'NULL'}<br />
+                {oldSubtitle !== newSubtitle && (
+                  <>
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"Subtitle" = {newSubtitle ? `'${newSubtitle}'` : 'NULL'}<br />
+                  </>
+                )}
+                &nbsp;&nbsp;WHERE "Id" = '{viewConfigId}'::uuid;
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            disabled={isSaving}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isSaving || !hasChanges}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm disabled:opacity-50"
+          >
+            {isSaving ? 'Saving...' : 'Confirm & Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmationModal({
   changes,
   onConfirm,
@@ -278,6 +376,11 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showMarkersList, setShowMarkersList] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingSubtitle, setEditingSubtitle] = useState('');
+  const [showTitleConfirmModal, setShowTitleConfirmModal] = useState(false);
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -401,6 +504,55 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
     setIsEditMode(false);
   };
 
+  const handleEditTitle = () => {
+    if (!viewConfig) return;
+    setIsEditingTitle(true);
+    setEditingTitle(viewConfig.Title || '');
+    setEditingSubtitle(viewConfig.Subtitle || '');
+  };
+
+  const handleCancelEditTitle = () => {
+    setIsEditingTitle(false);
+    setEditingTitle('');
+    setEditingSubtitle('');
+  };
+
+  const handleSaveTitle = () => {
+    if (!viewConfig) return;
+    const hasChanges = viewConfig.Title !== editingTitle || viewConfig.Subtitle !== editingSubtitle;
+    if (!hasChanges) return;
+    setShowTitleConfirmModal(true);
+  };
+
+  const handleConfirmSaveTitle = async () => {
+    if (!viewConfig) return;
+    setIsSavingTitle(true);
+    try {
+      const response = await fetch('/api/viewconfig', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: viewConfig.Id,
+          title: editingTitle,
+          subtitle: editingSubtitle,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update ViewConfig');
+      }
+
+      setViewConfig(prev => prev ? { ...prev, Title: editingTitle, Subtitle: editingSubtitle } : null);
+      setShowTitleConfirmModal(false);
+      setIsEditingTitle(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save title');
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
+
   const changedCount = Object.keys(positionOverrides).length;
 
   if (loading) {
@@ -436,7 +588,52 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
             <Link href="/viewconfig-search" className="text-blue-600 hover:text-blue-700 flex items-center gap-2">
               <ChevronLeft size={16} />
             </Link>
-            <h1 className="text-lg font-bold text-gray-900 truncate">{viewConfig.Title || 'Untitled'}</h1>
+            <div className="flex items-center gap-2">
+              {isEditingTitle ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    className="text-lg font-bold text-gray-900 bg-transparent border-b border-blue-500 focus:outline-none truncate"
+                    placeholder="Title"
+                  />
+                  <input
+                    type="text"
+                    value={editingSubtitle}
+                    onChange={(e) => setEditingSubtitle(e.target.value)}
+                    className="text-sm text-gray-600 bg-transparent border-b border-blue-500 focus:outline-none"
+                    placeholder="Subtitle"
+                  />
+                  <button
+                    onClick={handleSaveTitle}
+                    className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={handleCancelEditTitle}
+                    className="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h1 className="text-lg font-bold text-gray-900 truncate">
+                    {viewConfig.Title || 'Untitled'} 
+                    {viewConfig.Subtitle && <small className="text-gray-600 ml-1">- {viewConfig.Subtitle}</small>}
+                  </h1>
+                  <button
+                    onClick={handleEditTitle}
+                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                    title="Edit title and subtitle"
+                  >
+                    <Pencil size={10} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -683,6 +880,20 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
           onConfirm={handleConfirmSave}
           onCancel={() => setShowConfirmModal(false)}
           isSaving={isSaving}
+        />
+      )}
+
+      {/* Title Confirmation Modal */}
+      {showTitleConfirmModal && viewConfig && (
+        <TitleConfirmationModal
+          oldTitle={viewConfig.Title || ''}
+          oldSubtitle={viewConfig.Subtitle || ''}
+          newTitle={editingTitle}
+          newSubtitle={editingSubtitle}
+          viewConfigId={viewConfig.Id}
+          onConfirm={handleConfirmSaveTitle}
+          onCancel={() => setShowTitleConfirmModal(false)}
+          isSaving={isSavingTitle}
         />
       )}
     </div>
