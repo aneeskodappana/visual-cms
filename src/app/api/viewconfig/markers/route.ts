@@ -70,11 +70,56 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       status: 'success',
-      count: markers.length,
+      count: (markers as any[]).length,
       data: markers,
     });
   } catch (error: any) {
     console.error('Markers fetch error:', error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { updates } = body;
+
+    if (!updates || !Array.isArray(updates) || updates.length === 0) {
+      return NextResponse.json(
+        { error: 'Provide an array of updates with id, positionTop, positionLeft' },
+        { status: 400 }
+      );
+    }
+
+    const results = [];
+    for (const update of updates) {
+      const { id, positionTop, positionLeft } = update;
+      if (!id || positionTop === undefined || positionLeft === undefined) {
+        return NextResponse.json(
+          { error: `Invalid update entry: each must have id, positionTop, positionLeft` },
+          { status: 400 }
+        );
+      }
+
+      await prisma.$executeRaw`
+        UPDATE "Markers"
+        SET "PositionTop" = ${positionTop}::float8,
+            "PositionLeft" = ${positionLeft}::float8
+        WHERE "Id" = ${id}::uuid
+      `;
+      results.push({ id, positionTop, positionLeft });
+    }
+
+    return NextResponse.json({
+      status: 'success',
+      updated: results.length,
+      data: results,
+    });
+  } catch (error: any) {
+    console.error('Marker update error:', error);
     return NextResponse.json(
       { error: error.message },
       { status: 500 }
