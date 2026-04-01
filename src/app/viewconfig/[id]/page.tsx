@@ -277,6 +277,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [positionOverrides, setPositionOverrides] = useState<Record<string, { top: number; left: number }>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showMarkersList, setShowMarkersList] = useState(false);
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -428,46 +429,16 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className={`bg-white border-b shadow-sm p-6 ${isEditMode ? 'border-orange-300 bg-orange-50' : 'border-gray-200'}`}>
-        <div className="flex items-center justify-between mb-4">
-          <Link href="/viewconfig-search" className="text-blue-600 hover:text-blue-700 flex items-center gap-2">
-            <ChevronLeft size={20} /> Back to Search
-          </Link>
-          <div className="flex items-center gap-2">
-            {isEditMode ? (
-              <>
-                <span className="text-sm text-orange-700 font-medium mr-2">
-                  Edit Mode {changedCount > 0 && `(${changedCount} changed)`}
-                </span>
-                <button
-                  onClick={handleSaveClick}
-                  disabled={changedCount === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Save size={16} /> Save
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium text-sm flex items-center gap-2"
-                >
-                  <X size={16} /> Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setIsEditMode(true)}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium text-sm flex items-center gap-2"
-              >
-                <Pencil size={16} /> Edit Markers
-              </button>
-            )}
+      {/* Fixed Minimal Header */}
+      <div className={`fixed top-0 left-0 right-0 z-40 border-b shadow-sm px-6 py-2 ${isEditMode ? 'border-orange-300 bg-orange-50' : 'bg-white border-gray-200'}`}>
+        <div className="flex items-center justify-between max-w-full">
+          <div className="flex items-center gap-4">
+            <Link href="/viewconfig-search" className="text-blue-600 hover:text-blue-700 flex items-center gap-2">
+              <ChevronLeft size={16} />
+            </Link>
+            <h1 className="text-lg font-bold text-gray-900 truncate">{viewConfig.Title || 'Untitled'}</h1>
           </div>
-        </div>
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900">{viewConfig.Title || 'Untitled'}</h1>
-          <p className="text-gray-600 mt-2 flex items-center gap-2">
-            Code: {viewConfig.Code} | ID: {viewConfig.Id}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 const query = `SELECT * FROM "ViewConfigs" WHERE "Code" = '${viewConfig.Code}';`;
@@ -488,12 +459,39 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
             >
               Copy ID Query
             </button>
-          </p>
+            {isEditMode ? (
+              <>
+                <span className="text-xs text-orange-700 font-medium">
+                  Edit Mode {changedCount > 0 && `(${changedCount} changed)`}
+                </span>
+                <button
+                  onClick={handleSaveClick}
+                  disabled={changedCount === 0}
+                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save size={12} /> Save
+                </button>
+                <button
+                  onClick={handleCancelEdit}
+                  className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors font-medium text-xs flex items-center gap-1"
+                >
+                  <X size={12} /> Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsEditMode(true)}
+                className="px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors font-medium text-xs flex items-center gap-1"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-col">
+      <div className="flex flex-col pt-16">
         {/* Layout2D Selector */}
         {viewConfig.Layout2Ds && viewConfig.Layout2Ds.length > 1 && (
           <div className="max-w-10xl mx-auto w-full px-6 pt-6 mb-6 flex items-center gap-4">
@@ -535,22 +533,25 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
             >
               {(utils) => (
                 <div className="w-full h-full flex flex-col">
-                  <div className="absolute top-5 right-[350px] z-20 flex gap-2">
+                  <div className="fixed bottom-20 left-6 z-20 flex flex-col gap-2">
                     <button
                       onClick={() => utils.zoomIn()}
                       className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
+                      title="Zoom In"
                     >
                       +
                     </button>
                     <button
                       onClick={() => utils.zoomOut()}
                       className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
+                      title="Zoom Out"
                     >
                       −
                     </button>
                     <button
                       onClick={() => utils.resetTransform()}
                       className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium transition-colors"
+                      title="Reset View"
                     >
                       Reset
                     </button>
@@ -600,65 +601,80 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
       {/* Bottom Panels */}
       <div className="p-6">
-        {/* Selected Marker Details */}
-        {selectedMarker && (
-          <div className="max-w-10xl mx-auto bg-white rounded-lg shadow-md p-6 mb-6">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">{selectedMarker.Title || 'Marker'}</h2>
-                <p className="text-sm text-gray-600 mt-1">Code: {selectedMarker.Code}</p>
-              </div>
-              <button
-                onClick={() => setSelectedMarker(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6 md:grid-cols-3">
-              <div>
-                <span className="text-sm font-medium text-gray-700">Kind</span>
-                <p className="text-gray-600 mt-1">{selectedMarker.Kind} ({getMarkerTypeName(selectedMarker.Kind)})</p>
-              </div>
-              <div>
-                <span className="text-sm font-medium text-gray-700">SubType</span>
-                <p className="text-gray-600 mt-1">{selectedMarker.SubType} ({getMarkerSubTypeName(selectedMarker.SubType)})</p>
-              </div>
-              <div>
-                <span className="text-sm font-medium text-gray-700">Position</span>
-                <p className="text-gray-600 mt-1">
-                  {selectedMarker.PositionTop?.toFixed(2)}%, {selectedMarker.PositionLeft?.toFixed(2)}%
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Markers List */}
-        {layout2d && layout2d.Markers && layout2d.Markers.length > 0 && (
-          <div className="max-w-10xl mx-auto bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Markers ({layout2d.Markers.length})
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {layout2d.Markers.map((marker) => (
-                <button
-                  key={marker.Id}
-                  onClick={() => setSelectedMarker(marker)}
-                  className="p-4 border border-gray-300 rounded-lg hover:bg-blue-50 transition-colors text-left"
-                >
-                  <p className="font-medium text-gray-900">{marker.Title || 'Untitled'}</p>
-                  <p className="text-sm text-gray-600">{marker.Code}</p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {getMarkerTypeName(marker.Kind)} • {getMarkerSubTypeName(marker.SubType)}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Floating Markers Widget */}
+      {layout2d && layout2d.Markers && layout2d.Markers.length > 0 && (
+        <div className="fixed bottom-6 right-6 bg-white rounded-lg shadow-xl border border-gray-200 z-30">
+          <button
+            onClick={() => setShowMarkersList(!showMarkersList)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors rounded-t-lg"
+          >
+            <span className="text-sm font-medium text-gray-900">Markers ({layout2d.Markers.length})</span>
+            <ChevronLeft 
+              size={16} 
+              className={`text-gray-400 transition-transform ${showMarkersList ? 'rotate-90' : '-rotate-90'}`} 
+            />
+          </button>
+          
+          {showMarkersList && (
+            <div className="max-h-96 overflow-y-auto border-t border-gray-200">
+              {/* Selected Marker Details */}
+              {selectedMarker && (
+                <div className="border-b border-gray-200 bg-blue-50">
+                  <div className="p-3">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-gray-900 truncate">{selectedMarker.Title || 'Marker'}</h3>
+                        <p className="text-xs text-gray-600">{selectedMarker.Code}</p>
+                      </div>
+                      <button
+                        onClick={() => setSelectedMarker(null)}
+                        className="text-gray-400 hover:text-gray-600 ml-2"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <span className="font-medium text-gray-700">Kind</span>
+                        <p className="text-gray-600">{selectedMarker.Kind}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">SubType</span>
+                        <p className="text-gray-600">{selectedMarker.SubType}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Position</span>
+                        <p className="text-gray-600">
+                          {selectedMarker.PositionTop?.toFixed(1)}, {selectedMarker.PositionLeft?.toFixed(1)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-2">
+                {layout2d.Markers.map((marker) => (
+                  <button
+                    key={marker.Id}
+                    onClick={() => setSelectedMarker(marker)}
+                    className={`w-full p-2 border rounded transition-colors text-left ${
+                      selectedMarker?.Id === marker.Id 
+                        ? 'border-blue-500 bg-blue-50' 
+                        : 'border-gray-200 hover:bg-blue-50'
+                    }`}
+                  >
+                    <p className="text-xs font-medium text-gray-900 truncate">{marker.Title || marker.Code}</p>
+                    <p className="text-[10px] text-gray-500">{marker.Code}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
