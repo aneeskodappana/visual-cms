@@ -1,0 +1,805 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  output          = "../src/client"
+  binaryTargets   = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("CAPTIVATE_DATABASE_URL")
+  extensions        = [pgcrypto]
+}
+
+// Enums
+enum ViewType {
+  Globe
+  Nation
+  City
+  Project
+  Cluster
+  Amenity
+  Property
+  Floor
+  Interior
+  Gallery
+  ParkingFloorplan
+  ParkingUpgrade
+  ParkingUpgradeGallery
+}
+
+enum MarkerType {
+  Base
+  AldarProjectCity
+  GlobeCity
+  Project
+  Cluster
+  City
+  Airport
+  School
+  Park
+  Places_Of_Worship
+  Landmark
+  Unit
+  Floor
+  FloorplanWaypoint
+  RoomWaypoint
+  Exterior360
+  Train
+  Apartment
+  Retail
+  Community
+  Play
+  OnSideLandmark
+  Viewpoint
+  Project_Animated
+  IFrame
+  Project_Overlay
+  Amenity
+  Hero
+  Parking_Lot
+}
+
+// Models
+
+model ViewConfig {
+  Id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Kind       Int
+  Code       String  @default("")
+  Title      String  @default("")
+  Subtitle   String  @default("")
+  HasGallery Boolean @default(false)
+  CdnBaseUrl String  @default("")
+
+  // Relational properties
+  Layout3D     Layout3D?
+  Layout2Ds    Layout2D[]
+  Navigations  Navigation[]
+  GalleryItems GalleryItem[]
+
+  NationId String? @unique @db.Uuid
+  Nation   Nation? @relation(fields: [NationId], references: [Id], onDelete: Cascade)
+
+  CityId String? @unique @db.Uuid
+  City   City?   @relation(fields: [CityId], references: [Id], onDelete: Cascade)
+
+  ProjectId String?  @unique @db.Uuid
+  Project   Project? @relation(fields: [ProjectId], references: [Id], onDelete: Cascade)
+
+  ClusterId String?  @unique @db.Uuid
+  Cluster   Cluster? @relation(fields: [ClusterId], references: [Id], onDelete: Cascade)
+
+  AmenityId String?  @unique @db.Uuid
+  Amenity   Amenity? @relation(fields: [AmenityId], references: [Id], onDelete: Cascade)
+
+  UnitId String? @db.Uuid
+  Unit   Unit?   @relation(fields: [UnitId], references: [Id])
+
+  UnitVariantExteriorId String?              @unique @db.Uuid
+  UnitVariantExterior   UnitVariantExterior? @relation(fields: [UnitVariantExteriorId], references: [Id], onDelete: Cascade)
+
+  UnitVariantFloorId String?           @unique @db.Uuid
+  UnitVariantFloor   UnitVariantFloor? @relation(fields: [UnitVariantFloorId], references: [Id], onDelete: Cascade)
+
+  UnitVariantInteriorId String?              @unique @db.Uuid
+  UnitVariantInterior   UnitVariantInterior? @relation(fields: [UnitVariantInteriorId], references: [Id], onDelete: Cascade)
+
+  ParkingFloorplanId String?           @unique @db.Uuid
+  ParkingFloorplan   ParkingFloorplan? @relation(fields: [ParkingFloorplanId], references: [Id], onDelete: Cascade)
+
+  ParkingUpgradeId String?         @unique @db.Uuid
+  ParkingUpgrade   ParkingUpgrade? @relation(fields: [ParkingUpgradeId], references: [Id], onDelete: Cascade)
+
+  ParkingUpgradeGalleryId String?                @unique @db.Uuid
+  ParkingUpgradeGallery   ParkingUpgradeGallery? @relation(fields: [ParkingUpgradeGalleryId], references: [Id], onDelete: Cascade)
+
+  @@map("ViewConfigs")
+}
+
+model Layout2D {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  IsDefault    Boolean
+  DisplayName  String  @default("")
+  DisplayOrder Int
+
+  DesktopTransformSettingsJson String @default("")
+  MobileTransformSettingsJson  String @default("")
+
+  BackplateUrl      String  @default("")
+  BackplateVersion  Int     @default(1)
+  BackplateWidth    Float
+  BackplateHeight   Float
+  VideoLoopEnabled  Boolean @default(false)
+  VideoAutoplay     Boolean @default(false)
+  ShowVideoControls Boolean @default(false)
+  BackplateFormat   Int     @default(0)
+  NorthBearing      String  @default("")
+
+  BackplateThumbnailUrl     String? @default("")
+  BackplateThumbnailVersion Int?    @default(1)
+  BackplateThumbnailWidth   Float?
+  BackplateThumbnailHeight  Float?
+
+  HasCallbackWindow Boolean @default(false)
+
+  MarkerConnectionSettings String @default("")
+  FocusedMarkerId          Int    @default(-1)
+
+  // Relational properties
+  Markers    Marker[]
+  Backplates Backplate[]
+  Overlays   Overlay[]
+  GeoLayers  GeoLayer[]
+
+  ViewConfigId String?     @db.Uuid
+  ViewConfig   ViewConfig? @relation(fields: [ViewConfigId], references: [Id], onDelete: Cascade)
+
+  FromTransitions VideoTransition[] @relation("From2dTransitions")
+  ToTransitions   VideoTransition[] @relation("To2dTransitions")
+
+  @@index([ViewConfigId])
+  @@map("Layout2Ds")
+}
+
+model Layout3D {
+  Id                       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ModelUrl                 String @default("")
+  DefaultHotspotGroupIndex Int
+  ModelScaleJson           String @default("")
+
+  // Relational properties
+  HotspotGroup HotspotGroup[]
+
+  ViewConfigId String      @unique @db.Uuid
+  ViewConfig   ViewConfig? @relation(fields: [ViewConfigId], references: [Id], onDelete: Cascade)
+
+  FromTransitions VideoTransition[] @relation("From3dTransitions")
+  ToTransitions   VideoTransition[] @relation("To3dTransitions")
+
+  @@map("Layout3Ds")
+}
+
+model Marker {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  Kind        Int
+  SubType     Int?
+  MarkerIndex Int
+  Code        String @default("")
+
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  NavigateTo    String? @default("")
+  IsShallowLink Boolean
+
+  PositionTop  Float
+  PositionLeft Float
+  KeepScale    Boolean
+
+  LngLatJson         String @default("")
+  ConnectionLineJson String @default("")
+
+  Scale         Float @default(100)
+  MinZoom       Float @default(0.0)
+  MaxZoom       Float @default(2.5)
+  MobileScale   Float @default(100)
+  MobileMinZoom Float @default(0.0)
+  MobileMaxZoom Float @default(2.5)
+
+  LinkToMarkerIndex  Int?
+  AnchorPositionTop  Float?
+  AnchorPositionLeft Float?
+
+  HoverTitle        String?
+  HoverTitleVisible Boolean?
+  HoverIconUrl      String?
+  HoverIconVersion  Int?
+  HoverIconWidth    Float?
+  HoverIconHeight   Float?
+  HoverScale        Float?
+
+  SelectedTitle        String?
+  SelectedTitleVisible Boolean?
+  SelectedIconUrl      String?
+  SelectedIconVersion  Int?
+  SelectedIconWidth    Float?
+  SelectedIconHeight   Float?
+  SelectedScale        Float?
+
+  Title        String  @default("")
+  TitleVisible Boolean
+
+  IconUrl     String?
+  IconVersion Int?
+  IconWidth   Float?
+  IconHeight  Float?
+
+  Version    Int?
+  IsPriority Boolean?
+  Logo       Int?
+
+  // Relational properties
+  Layout2DId String   @db.Uuid
+  Layout2D   Layout2D @relation(fields: [Layout2DId], references: [Id], onDelete: Cascade)
+
+  @@index([Layout2DId])
+  @@map("Markers")
+}
+
+model Hotspot {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  HotspotIndex Int
+  IsVisible    Boolean
+  IsExplorable Boolean
+  Name         String  @default("")
+
+  MediaUrl              String @default("")
+  MediaVersion          Int    @default(1)
+  MediaThumbnailUrl     String @default("")
+  MediaThumbnailVersion Int    @default(1)
+
+  PositionJson              String @default("")
+  OffsetRotationJson        String @default("")
+  DefaultCameraRotationJson String @default("")
+
+  /// --- Camera settings stored as JSONB (per-vw/vh breakpoints) ---
+  /// Non-Nullable; setting default fallback for all.
+  CameraSettingsJson Json @default(dbgenerated("'{\"version\":1,\"default\":{\"fov\":90}}'::jsonb")) @db.JsonB
+
+  // Relational properties
+  HotspotGroupId String       @db.Uuid
+  HotspotGroup   HotspotGroup @relation(fields: [HotspotGroupId], references: [Id], onDelete: Cascade)
+
+  @@index([HotspotGroupId])
+  @@map("Hotspots")
+}
+
+model HotspotGroup {
+  Id   String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Name String @default("")
+
+  HotspotGroupIndex   Int
+  DefaultHotspotIndex Int
+
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  Hotspots Hotspot[]
+
+  Layout3DId String   @db.Uuid
+  Layout3D   Layout3D @relation(fields: [Layout3DId], references: [Id], onDelete: Cascade)
+
+  @@index([Layout3DId])
+  @@map("HotspotGroups")
+}
+
+model Navigation {
+  Id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  DisplayName    String  @default("")
+  DisplaySubName String  @default("")
+  CardImageUrl   String  @default("")
+  DisplayOrder   Int
+  IsPriority     Boolean
+  NavigationUrl  String  @default("")
+
+  // Relational properties
+  ViewConfigId String     @db.Uuid
+  ViewConfig   ViewConfig @relation(fields: [ViewConfigId], references: [Id], onDelete: Cascade)
+
+  @@index([ViewConfigId])
+  @@map("Navigations")
+}
+
+model GalleryItem {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Title        String  @default("")
+  IsDefault    Boolean @default(false)
+  DisplayOrder Int
+  MediaUrl     String  @default("")
+  MediaVersion Int     @default(1)
+  MediaFormat  Int     @default(0)
+
+  Description String? @default("")
+  Subtitle    String? @default("")
+  Code        String? @default("")
+
+  // Relational properties
+  ViewConfigId String     @db.Uuid
+  ViewConfig   ViewConfig @relation(fields: [ViewConfigId], references: [Id], onDelete: Cascade)
+
+  @@index([ViewConfigId])
+  @@map("GalleryItems")
+}
+
+model Amenity {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  ProjectId String?  @db.Uuid
+  Project   Project? @relation(fields: [ProjectId], references: [Id], onDelete: Cascade)
+
+  ClusterId String?  @db.Uuid
+  Cluster   Cluster? @relation(fields: [ClusterId], references: [Id], onDelete: Cascade)
+
+  @@map("Amenities")
+}
+
+model City {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+  Projects   Project[]
+
+  NationId String @db.Uuid
+  Nation   Nation @relation(fields: [NationId], references: [Id], onDelete: Cascade)
+
+  @@map("Cities")
+}
+
+model Cluster {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig        ViewConfig?
+  Properties        Property[]
+  Amenities         Amenity[]
+  ParkingFloorplans ParkingFloorplan[]
+
+  ProjectId String  @db.Uuid
+  Project   Project @relation(fields: [ProjectId], references: [Id], onDelete: Cascade)
+
+  @@map("Clusters")
+}
+
+model Nation {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+  Cities     City[]
+
+  @@map("Nations")
+}
+
+model Project {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  MulesoftCode String  @default("")
+  CommunityKey String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig           ViewConfig?
+  Clusters             Cluster[]
+  Amenities            Amenity[]
+  CacheInfo            ProjectCacheInfo?
+  ProjectSalesLeadInfo ProjectSalesLeadInfo?
+  VariantInfo          ProjectVariantsInfo?
+
+  CityId String @db.Uuid
+  City   City   @relation(fields: [CityId], references: [Id], onDelete: Cascade)
+
+  @@map("Projects")
+}
+
+model Property {
+  Id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code          String  @default("")
+  Title         String  @default("")
+  IsVisible     Boolean
+  IsExplorable  Boolean
+  CommunityName String  @default("")
+
+  // Relational properties
+  PropertyFloors PropertyFloor[]
+
+  ClusterId String  @db.Uuid
+  Cluster   Cluster @relation(fields: [ClusterId], references: [Id], onDelete: Cascade)
+
+  @@map("Properties")
+}
+
+model PropertyFloor {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  Units Unit[]
+
+  PropertyId String   @db.Uuid
+  Property   Property @relation(fields: [PropertyId], references: [Id], onDelete: Cascade)
+
+  @@map("PropertyFloors")
+}
+
+model Unit {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @default("")
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  UnitType              String  @default("")
+  UnitStatus            String  @default("")
+  UnitCategory          String  @default("")
+  FeatureSpecification  String  @default("")
+  IsPremium             Boolean
+  SaleableArea          String  @default("")
+  BalconyArea           String  @default("")
+  PlotArea              String  @default("")
+  PaymentPlan           String  @default("")
+  Price                 String  @default("")
+  OnlineStatus          Boolean
+  LocationId            String  @default("")
+  DownPaymentPercentage Int
+  DisableUnit           Boolean
+  ClusterName           String  @default("")
+  BedroomCount          Int
+  BathroomCount         Int
+  UnitNumber            String  @default("")
+  Plex                  String  @default("")
+  Mirror                String  @default("")
+  DefaultFloor          String  @default("")
+  FloorsOccupied        String  @default("")
+  NorthBearing          String  @default("")
+  IsFurnished           Boolean
+  SalesAgentId          String  @default("")
+  HasInterior           Boolean @default(true)
+  HasFloorplan          Boolean @default(true)
+  DisplayName           String  @default("")
+
+  IsShowHome    Boolean @default(false)
+  HasUniqueView Boolean @default(false)
+  EnableForKiosk Boolean @default(false)
+
+  // Relational properties
+  ViewConfigs ViewConfig[]
+
+  UnitVariantId String      @db.Uuid
+  UnitVariant   UnitVariant @relation(fields: [UnitVariantId], references: [Id], onDelete: Cascade)
+
+  PropertyFloorId String        @db.Uuid
+  PropertyFloor   PropertyFloor @relation(fields: [PropertyFloorId], references: [Id], onDelete: Cascade)
+
+  @@map("Units")
+}
+
+model UnitVariant {
+  Id    String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code  String @unique
+  Title String @default("")
+
+  // Relational properties
+  Units                Unit[]
+  UnitVariantExteriors UnitVariantExterior[]
+  UnitVariantFloors    UnitVariantFloor[]
+  UnitVariantInteriors UnitVariantInterior[]
+
+  @@map("UnitVariants")
+}
+
+model UnitVariantExterior {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @unique
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  UnitVariantId String      @db.Uuid
+  UnitVariant   UnitVariant @relation(fields: [UnitVariantId], references: [Id], onDelete: Cascade)
+
+  @@map("UnitVariantExteriors")
+}
+
+model UnitVariantFloor {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @unique
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  UnitVariantId String      @db.Uuid
+  UnitVariant   UnitVariant @relation(fields: [UnitVariantId], references: [Id], onDelete: Cascade)
+
+  @@map("UnitVariantFloors")
+}
+
+model UnitVariantInterior {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @unique
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  UnitVariantId String      @db.Uuid
+  UnitVariant   UnitVariant @relation(fields: [UnitVariantId], references: [Id], onDelete: Cascade)
+
+  @@map("UnitVariantInteriors")
+}
+
+model ParkingFloorplan {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @unique
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  ClusterId String  @db.Uuid
+  Cluster   Cluster @relation(fields: [ClusterId], references: [Id], onDelete: Cascade)
+
+  ParkingUpgrade ParkingUpgrade?
+
+  @@map("ParkingFloorplans")
+}
+
+model ParkingUpgrade {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @unique
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  ParkingFloorplanId String           @unique @db.Uuid
+  ParkingFloorplan   ParkingFloorplan @relation(fields: [ParkingFloorplanId], references: [Id], onDelete: Cascade)
+
+  ParkingUpgradeGalleries ParkingUpgradeGallery[]
+
+  @@map("ParkingUpgrades")
+}
+
+model ParkingUpgradeGallery {
+  Id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Code         String  @unique
+  Title        String  @default("")
+  IsVisible    Boolean
+  IsExplorable Boolean
+
+  // Relational properties
+  ViewConfig ViewConfig?
+
+  ParkingUpgradeId String         @db.Uuid
+  ParkingUpgrade   ParkingUpgrade @relation(fields: [ParkingUpgradeId], references: [Id], onDelete: Cascade)
+
+  @@map("ParkingUpgradeGalleries")
+}
+
+model ProjectCacheInfo {
+  Id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  MulesoftDataKey  String @default("")
+  ProcessedDataKey String @default("")
+
+  // Relational properties
+  ProjectId String  @unique @db.Uuid
+  Project   Project @relation(fields: [ProjectId], references: [Id], onDelete: Cascade)
+
+  @@map("ProjectCacheInfo")
+}
+
+model Backplate {
+  Id      String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  Url     String @default("")
+  Version Int    @default(1)
+
+  Width  Float
+  Height Float
+  Type   Int   @default(0)
+  Theme  Int   @default(0)
+
+  LngLatJson       String @default("")
+  LngLatBoundsJson String @default("")
+  MinZoomLevel     Float  @default(0)
+  MaxZoomLevel     Float  @default(0)
+
+  VideoLoopEnabled  Boolean @default(false)
+  VideoAutoplay     Boolean @default(false)
+  ShowVideoControls Boolean @default(false)
+
+  ThumbnailUrl     String? @default("")
+  ThumbnailVersion Int?    @default(1)
+  ThumbnailWidth   Float?
+  ThumbnailHeight  Float?
+
+  // Relational properties
+  Layout2DId String?   @db.Uuid
+  Layout2D   Layout2D? @relation(fields: [Layout2DId], references: [Id], onDelete: Cascade)
+
+  @@map("Backplates")
+}
+
+model VideoTransition {
+  Id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  FromLayout2dId String? @db.Uuid
+  ToLayout2dId   String? @db.Uuid
+  FromLayout3dId String? @db.Uuid
+  ToLayout3dId   String? @db.Uuid
+  MediaUrl       String
+  Theme          Int     @default(0)
+  Version        Int     @default(1)
+
+  FromLayout2d Layout2D? @relation("From2dTransitions", fields: [FromLayout2dId], references: [Id], onDelete: Cascade)
+  ToLayout2d   Layout2D? @relation("To2dTransitions", fields: [ToLayout2dId], references: [Id], onDelete: Cascade)
+
+  FromLayout3d Layout3D? @relation("From3dTransitions", fields: [FromLayout3dId], references: [Id], onDelete: Cascade)
+  ToLayout3d   Layout3D? @relation("To3dTransitions", fields: [ToLayout3dId], references: [Id], onDelete: Cascade)
+
+  @@unique([FromLayout2dId, ToLayout2dId, FromLayout3dId, ToLayout3dId])
+  @@map("VideoTransitions")
+}
+
+model ProjectSalesLeadInfo {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  LeadSource         String @default("")
+  EnquiryCategory    String @default("")
+  EnquiryTrigger     String @default("")
+  SalesType          String @default("")
+  PropertyUsage      String @default("")
+  ProjectName        String @default("")
+  OfferDomestic      String @default("")
+  OfferInternational String @default("")
+
+  // Relational properties
+  ProjectId String  @unique @db.Uuid
+  Project   Project @relation(fields: [ProjectId], references: [Id], onDelete: Cascade)
+
+  @@map("ProjectSalesLeadInfo")
+}
+
+model ParkingProject {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  ProjectName   String @default("")
+  ProjectId     String @default("")
+  CommunityName String @default("")
+  BuildingName  String @unique
+  BuildingId    String @default("")
+
+  // Relational properties
+  Slots ParkingSlot[]
+
+  @@map("ParkingProjects")
+}
+
+model ParkingSlot {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  ProductId         String @default("")
+  Type              String @default("")
+  Tier              String @default("")
+  RefId             String @default("")
+  Group             String @default("")
+  Segment           String @default("")
+  Category          String @default("")
+  SlotId            String @default("")
+  DistanceFromLobby String @default("")
+  Capacity          String @default("")
+  ListPrice         Float  @default(0)
+  Status            String @default("")
+
+  // Relational properties
+  ParkingProjectId String         @db.Uuid
+  ParkingProject   ParkingProject @relation(fields: [ParkingProjectId], references: [Id], onDelete: Cascade)
+
+  @@map("ParkingSlots")
+}
+
+model ProjectVariantsInfo {
+  Id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  UnitVariantTypes String @default("")
+
+  // Relational properties
+  ProjectId String  @unique @db.Uuid
+  Project   Project @relation(fields: [ProjectId], references: [Id], onDelete: Cascade)
+
+  @@map("ProjectVariantsInfo")
+}
+
+model Overlay {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  Url     String @default("")
+  Type    Int    @default(1)
+  Version Int    @default(1)
+
+  // Relational properties
+  Layout2DId String   @db.Uuid
+  Layout2D   Layout2D @relation(fields: [Layout2DId], references: [Id], onDelete: Cascade)
+
+  @@map("Overlays")
+}
+
+model GeoLayer {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  Code         String  @default("")
+  Version      Int     @default(1)
+  MinZoom      Float   @default(0)
+  MaxZoom      Float   @default(0)
+  BehaviorJson String?
+
+  // Relational properties
+  Layout2DId String   @db.Uuid
+  Layout2D   Layout2D @relation(fields: [Layout2DId], references: [Id], onDelete: Cascade)
+
+  Data GeoLayerData?
+
+  @@map("GeoLayers")
+}
+
+model GeoLayerData {
+  Id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  SourceType        String
+  SourceLayer       String?
+  CoordinatesJson   String?
+  Url               String?
+  GeoJsonDataJson   String?
+  GeoLayerStyleJson String?
+
+  // Relational properties
+  GeoLayerId String   @unique @db.Uuid
+  GeoLayer   GeoLayer @relation(fields: [GeoLayerId], references: [Id], onDelete: Cascade)
+
+  @@map("GeoLayerData")
+}
