@@ -535,7 +535,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
             >
               {(utils) => (
                 <div className="w-full h-full flex flex-col">
-                  <div className="absolute top-4 right-4 z-20 flex gap-2">
+                  <div className="absolute top-5 right-[350px] z-20 flex gap-2">
                     <button
                       onClick={() => utils.zoomIn()}
                       className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
@@ -566,14 +566,16 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
                         className="relative bg-gray-100"
                         style={{
                           width: `${layout2d.BackplateWidth || 1920}px`,
-                          height: `${layout2d.BackplateHeight || 1080}px`,
+                          maxWidth: '100%',
+                          aspectRatio: `${layout2d.BackplateWidth || 1920} / ${layout2d.BackplateHeight || 1080}`,
                         }}
                       >
                       {/* Backplate Image */}
                       <img
                         src={backplateUrl}
                         alt={layout2d.DisplayName || 'Layout'}
-                        className="w-full h-full object-contain"
+                        className="w-full h-full"
+                        style={{ display: 'block' }}
                       />
 
                       {/* Markers Overlay */}
