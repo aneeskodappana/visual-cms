@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent, useControls, useTransformEffect } from 'react-zoom-pan-pinch';
 import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName } from '@/lib/cdnUtils';
 
 interface Layout2D {
@@ -35,13 +35,64 @@ interface ViewConfig {
   Layout2Ds: Layout2D[];
 }
 
+function MarkerOverlay({ layout2d, onSelectMarker }: { layout2d: Layout2D; onSelectMarker: (marker: Marker) => void }) {
+  const [scale, setScale] = useState(1);
+
+  useTransformEffect(({ state }) => {
+    setScale(state.scale);
+  });
+
+  return (
+    <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+      {layout2d.Markers.map((marker) => (
+        <div
+          key={marker.Id}
+          className="absolute group cursor-pointer"
+          style={{
+            top: `${(marker.PositionTop / (layout2d.BackplateHeight || 1080)) * 100}%`,
+            left: `${(marker.PositionLeft / (layout2d.BackplateWidth || 1920)) * 100}%`,
+            transform: `translate(-50%, -50%) scale(${1 / scale})`,
+            transformOrigin: 'center',
+            zIndex: 50,
+            pointerEvents: 'auto',
+          }}
+          onClick={() => onSelectMarker(marker)}
+          title={marker.Title || marker.Code}
+        >
+          {marker.IconUrl ? (
+            <img
+              src={`https://worlddev.aldar.com/assets/${marker.IconUrl}`}
+              alt={marker.Title || 'marker'}
+              className="hover:saturate-150 transition-all drop-shadow-lg"
+              style={{ width: '40px', height: '40px', flexShrink: 0 }}
+            />
+          ) : (
+            <div className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-2 h-2 bg-white rounded-full"></div>
+            </div>
+          )}
+
+          {/* Hover Tooltip */}
+          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-900 text-white px-3 py-2 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-normal max-w-xs">
+            <div className="font-medium text-center">{marker.Title || marker.Code}</div>
+            <div className="text-gray-300 text-[11px] mt-1 w-[300px] text-center">
+              <div>UUID: {marker.Id}</div>
+              <div>Position: ({marker.PositionTop}, {marker.PositionLeft})</div>
+            </div>
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [viewConfig, setViewConfig] = useState<ViewConfig | null>(null);
   const [currentLayout2DIndex, setCurrentLayout2DIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMarker, setSelectedMarker] = useState<Marker | null>(null);
-  const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -153,13 +204,8 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
               initialPositionY={0}
               wheel={{ step: 0.1 }}
               doubleClick={{ disabled: false }}
-              autoResetControls={false}
-              limitToWrapper={false}
-              centerOnInit={false}
             >
-              {(utils) => {
-                const scale = utils?.state?.scale || 1;
-                return (
+              {(utils) => (
                 <div className="w-full h-full flex flex-col">
                   <div className="absolute top-4 right-4 z-20 flex gap-2">
                     <button
@@ -204,67 +250,13 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
                       {/* Markers Overlay */}
                       {layout2d.Markers && layout2d.Markers.length > 0 && (
-                        <div 
-                          className="absolute inset-0"
-                          style={{
-                            transformOrigin: 'top left',
-                            transform: `scale(${1 / scale})`,
-                            width: `${scale * 100}%`,
-                            height: `${scale * 100}%`,
-                          }}
-                        >
-                          {layout2d.Markers.map((marker) => (
-                            <div
-                              key={marker.Id}
-                              className="absolute group cursor-pointer"
-                              style={{
-                                top: `${(marker.PositionTop / (layout2d.BackplateHeight || 1080)) * 100}%`,
-                                left: `${(marker.PositionLeft / (layout2d.BackplateWidth || 1920)) * 100}%`,
-                                transform: 'translate(-50%, -50%)',
-                                zIndex: 50,
-                              }}
-                              onClick={() => setSelectedMarker(marker)}
-                              title={marker.Title || marker.Code}
-                            >
-                              {/* Marker Icon */}
-                              {marker.IconUrl ? (
-                                <img
-                                  src={`https://worlddev.aldar.com/assets/${marker.IconUrl}`}
-                                  alt={marker.Title || 'marker'}
-                                  className="hover:saturate-150 transition-all drop-shadow-lg"
-                                  style={{ 
-                                    width: '40px', 
-                                    height: '40px',
-                                    flexShrink: 0
-                                  }}
-                                />
-                              ) : (
-                                <div 
-                                  className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center flex-shrink-0"
-                                >
-                                  <div className="w-2 h-2 bg-white rounded-full"></div>
-                                </div>
-                              )}
-
-                              {/* Hover Tooltip */}
-                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-900 text-white px-3 py-2 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-normal max-w-xs">
-                                <div className="font-medium">{marker.Title || marker.Code}</div>
-                                <div className="text-gray-300 text-[11px] mt-1">
-                                  <div>UUID: {marker.Id.substring(0, 8)}...</div>
-                                  <div>Position: ({marker.PositionTop}, {marker.PositionLeft})</div>
-                                </div>
-                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                        <MarkerOverlay layout2d={layout2d} onSelectMarker={setSelectedMarker} />
                       )}
                       </div>
                     </div>
                   </TransformComponent>
                 </div>
-                );
-              }}
+              )}
             </TransformWrapper>
           </div>
         )}
