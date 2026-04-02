@@ -10,6 +10,16 @@ const ThreeSixtyViewer = dynamic(
   { ssr: false, loading: () => <div className="flex items-center justify-center h-full bg-gray-900 text-white">Loading 3D viewer...</div> }
 );
 
+interface NavigationData {
+  Id: string;
+  DisplayName: string;
+  DisplaySubName: string;
+  DisplayOrder: number;
+  IsPriority: boolean;
+  NavigationUrl: string;
+  ViewConfigId: string;
+}
+
 interface ViewConfigData {
   Id: string;
   Title: string;
@@ -17,14 +27,17 @@ interface ViewConfigData {
   Code: string;
   CdnBaseUrl: string;
   Layout3D: any;
+  Navigations: NavigationData[];
 }
 
-interface HotspotPositionChange {
+interface HotspotChange {
   hotspotId: string;
   hotspotName: string;
-  oldPositionRaw: { x: number; y: number; z: number };
-  oldPositionSphere: { x: number; y: number; z: number };
-  newPosition: { x: number; y: number; z: number };
+  oldPositionRaw?: { x: number; y: number; z: number };
+  oldPositionSphere?: { x: number; y: number; z: number };
+  newPosition?: { x: number; y: number; z: number };
+  oldName?: string;
+  newName?: string;
 }
 
 const SPHERE_RADIUS = 4;
@@ -63,13 +76,25 @@ function parsePosition(positionJson: string): { x: number; y: number; z: number 
   }
 }
 
+function buildSqlForChange(change: HotspotChange): string {
+  const setClauses: string[] = [];
+  if (change.newPosition) {
+    const pos = { x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) };
+    setClauses.push(`"PositionJson" = '${JSON.stringify(pos)}'`);
+  }
+  if (change.newName !== undefined) {
+    setClauses.push(`"Name" = '${change.newName}'`);
+  }
+  return `-- ${change.hotspotName}\nUPDATE "Hotspots"\n  SET ${setClauses.join(', ')}\n  WHERE "Id" = '${change.hotspotId}'::uuid;`;
+}
+
 function HotspotConfirmationModal({
   changes,
   onConfirm,
   onCancel,
   isSaving,
 }: {
-  changes: HotspotPositionChange[];
+  changes: HotspotChange[];
   onConfirm: () => void;
   onCancel: () => void;
   isSaving: boolean;
@@ -78,7 +103,7 @@ function HotspotConfirmationModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] flex flex-col">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">Confirm Hotspot Position Changes</h2>
+          <h2 className="text-xl font-bold text-gray-900">Confirm Hotspot Changes</h2>
           <p className="text-sm text-gray-500 mt-1">{changes.length} hotspot(s) modified</p>
         </div>
 
@@ -87,26 +112,35 @@ function HotspotConfirmationModal({
             <thead>
               <tr className="text-left text-gray-500 border-b">
                 <th className="pb-2 font-medium">Hotspot</th>
-                <th className="pb-2 font-medium">Old Position</th>
-                <th className="pb-2 font-medium">New Position</th>
+                <th className="pb-2 font-medium">Changes</th>
               </tr>
             </thead>
             <tbody>
               {changes.map((change) => (
                 <tr key={change.hotspotId} className="border-b border-gray-100">
-                  <td className="py-3">
+                  <td className="py-3 align-top">
                     <div className="font-medium text-gray-900">{change.hotspotName}</div>
                     <div className="text-[11px] text-gray-400 font-mono">{change.hotspotId}</div>
                   </td>
-                  <td className="py-3 font-mono text-red-600 text-xs">
-                    x: {change.oldPositionSphere.x.toFixed(4)}<br />
-                    y: {change.oldPositionSphere.y.toFixed(4)}<br />
-                    z: {change.oldPositionSphere.z.toFixed(4)}
-                  </td>
-                  <td className="py-3 font-mono text-green-600 text-xs">
-                    x: {change.newPosition.x.toFixed(4)}<br />
-                    y: {change.newPosition.y.toFixed(4)}<br />
-                    z: {change.newPosition.z.toFixed(4)}
+                  <td className="py-3 text-xs space-y-2">
+                    {change.newName !== undefined && (
+                      <div>
+                        <span className="text-gray-500 font-medium">Name:</span>
+                        <span className="ml-2 text-red-600 line-through">{change.oldName}</span>
+                        <span className="ml-2 text-green-600 font-medium">{change.newName}</span>
+                      </div>
+                    )}
+                    {change.newPosition && change.oldPositionSphere && (
+                      <div className="font-mono">
+                        <span className="text-gray-500 font-medium font-sans">Position:</span><br />
+                        <span className="text-red-600">
+                          x: {change.oldPositionSphere.x.toFixed(4)}, y: {change.oldPositionSphere.y.toFixed(4)}, z: {change.oldPositionSphere.z.toFixed(4)}
+                        </span><br />
+                        <span className="text-green-600">
+                          x: {change.newPosition.x.toFixed(4)}, y: {change.newPosition.y.toFixed(4)}, z: {change.newPosition.z.toFixed(4)}
+                        </span>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -118,7 +152,7 @@ function HotspotConfirmationModal({
               <h3 className="text-sm font-semibold text-gray-700">SQL Queries</h3>
               <button
                 onClick={() => {
-                  const transactionSql = `BEGIN;\n\n${changes.map((change) => `-- ${change.hotspotName} (old: ${JSON.stringify({ x: +change.oldPositionRaw.x.toFixed(4), y: +change.oldPositionRaw.y.toFixed(4), z: +change.oldPositionRaw.z.toFixed(4) })})\nUPDATE "Hotspots"\n  SET "PositionJson" = '${JSON.stringify({ x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) })}'\n  WHERE "Id" = '${change.hotspotId}'::uuid;`).join('\n\n')}\n\nCOMMIT;`;
+                  const transactionSql = `BEGIN;\n\n${changes.map((c) => buildSqlForChange(c)).join('\n\n')}\n\nCOMMIT;`;
                   navigator.clipboard.writeText(transactionSql);
                 }}
                 className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
@@ -126,16 +160,26 @@ function HotspotConfirmationModal({
                 Copy All
               </button>
             </div>
-            <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto">
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap">
               <div className="text-gray-500 mb-2">-- BEGIN TRANSACTION</div>
-              {changes.map((change) => (
-                <div key={change.hotspotId} className="mb-2">
-                  <span className="text-gray-500">-- {change.hotspotName}</span><br />
-                  UPDATE &quot;Hotspots&quot;<br />
-                  &nbsp;&nbsp;SET &quot;PositionJson&quot; = &apos;{JSON.stringify({ x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) })}&apos;<br />
-                  &nbsp;&nbsp;WHERE &quot;Id&quot; = &apos;{change.hotspotId}&apos;::uuid;
-                </div>
-              ))}
+              {changes.map((change) => {
+                const setClauses: string[] = [];
+                if (change.newPosition) {
+                  const pos = { x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) };
+                  setClauses.push(`"PositionJson" = '${JSON.stringify(pos)}'`);
+                }
+                if (change.newName !== undefined) {
+                  setClauses.push(`"Name" = '${change.newName}'`);
+                }
+                return (
+                  <div key={change.hotspotId} className="mb-2">
+                    <span className="text-gray-500">-- {change.hotspotName}</span><br />
+                    UPDATE &quot;Hotspots&quot;<br />
+                    &nbsp;&nbsp;SET {setClauses.join(', ')}<br />
+                    &nbsp;&nbsp;WHERE &quot;Id&quot; = &apos;{change.hotspotId}&apos;::uuid;
+                  </div>
+                );
+              })}
               <div className="text-gray-500 mt-2">-- COMMIT;</div>
             </div>
           </div>
@@ -171,6 +215,7 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedHotspotId, setSelectedHotspotId] = useState<string | null>(null);
   const [positionOverrides, setPositionOverrides] = useState<Record<string, { x: number; y: number; z: number }>>({});
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -215,7 +260,7 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
     }));
   }, []);
 
-  const getChanges = useCallback((): HotspotPositionChange[] => {
+  const getChanges = useCallback((): HotspotChange[] => {
     if (!viewConfig) return [];
     const layout3D = viewConfig.Layout3D;
     const hotspotGroups = layout3D.HotspotGroup || [];
@@ -225,22 +270,41 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
       (group.Hotspots || []).forEach((h: any) => allHotspots.push(h));
     });
 
-    return Object.entries(positionOverrides)
-      .map(([hotspotId, newPos]) => {
+    const changedIds = new Set([...Object.keys(positionOverrides), ...Object.keys(nameOverrides)]);
+    return Array.from(changedIds)
+      .map((hotspotId) => {
         const hotspot = allHotspots.find((h) => h.Id === hotspotId);
         if (!hotspot) return null;
-        const oldPosRaw = parsePosition(hotspot.PositionJson);
-        const oldPosSphere = convertToSpherePosition(oldPosRaw.x, oldPosRaw.y, oldPosRaw.z);
-        return {
+
+        const change: HotspotChange = {
           hotspotId,
-          hotspotName: hotspot.Name || `Hotspot ${hotspot.HotspotIndex}`,
-          oldPositionRaw: oldPosRaw,
-          oldPositionSphere: oldPosSphere,
-          newPosition: newPos,
+          hotspotName: nameOverrides[hotspotId] ?? hotspot.Name ?? `Hotspot ${hotspot.HotspotIndex}`,
         };
+
+        if (positionOverrides[hotspotId]) {
+          const oldPosRaw = parsePosition(hotspot.PositionJson);
+          change.oldPositionRaw = oldPosRaw;
+          change.oldPositionSphere = convertToSpherePosition(oldPosRaw.x, oldPosRaw.y, oldPosRaw.z);
+          change.newPosition = positionOverrides[hotspotId];
+        }
+
+        if (nameOverrides[hotspotId] !== undefined && nameOverrides[hotspotId] !== hotspot.Name) {
+          change.oldName = hotspot.Name;
+          change.newName = nameOverrides[hotspotId];
+        }
+
+        if (!change.newPosition && change.newName === undefined) return null;
+        return change;
       })
-      .filter(Boolean) as HotspotPositionChange[];
-  }, [viewConfig, positionOverrides]);
+      .filter(Boolean) as HotspotChange[];
+  }, [viewConfig, positionOverrides, nameOverrides]);
+
+  const handleNameChange = useCallback((hotspotId: string, newName: string) => {
+    setNameOverrides((prev) => ({
+      ...prev,
+      [hotspotId]: newName,
+    }));
+  }, []);
 
   const handleSaveClick = () => {
     const changes = getChanges();
@@ -260,7 +324,10 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
         body: JSON.stringify({
           updates: changes.map((c) => ({
             id: c.hotspotId,
-            positionJson: JSON.stringify({ x: +c.newPosition.x.toFixed(4), y: +c.newPosition.y.toFixed(4), z: +c.newPosition.z.toFixed(4) }),
+            ...(c.newPosition && {
+              positionJson: JSON.stringify({ x: +c.newPosition.x.toFixed(4), y: +c.newPosition.y.toFixed(4), z: +c.newPosition.z.toFixed(4) }),
+            }),
+            ...(c.newName !== undefined && { name: c.newName }),
           })),
         }),
       });
@@ -278,11 +345,13 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
           HotspotGroup: updated.Layout3D.HotspotGroup.map((group: any) => ({
             ...group,
             Hotspots: group.Hotspots.map((hotspot: any) => {
-              const override = positionOverrides[hotspot.Id];
-              if (!override) return hotspot;
+              const posOverride = positionOverrides[hotspot.Id];
+              const nameOverride = nameOverrides[hotspot.Id];
+              if (!posOverride && nameOverride === undefined) return hotspot;
               return {
                 ...hotspot,
-                PositionJson: JSON.stringify({ x: override.x, y: override.y, z: override.z }),
+                ...(posOverride && { PositionJson: JSON.stringify({ x: posOverride.x, y: posOverride.y, z: posOverride.z }) }),
+                ...(nameOverride !== undefined && { Name: nameOverride }),
               };
             }),
           })),
@@ -291,6 +360,7 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
       });
 
       setPositionOverrides({});
+      setNameOverrides({});
       setShowConfirmModal(false);
       setIsEditMode(false);
       setSelectedHotspotId(null);
@@ -303,11 +373,20 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
 
   const handleCancelEdit = () => {
     setPositionOverrides({});
+    setNameOverrides({});
     setIsEditMode(false);
     setSelectedHotspotId(null);
   };
 
-  const changedCount = Object.keys(positionOverrides).length;
+  const changedCount = new Set([...Object.keys(positionOverrides), ...Object.keys(nameOverrides)]).size;
+
+  const navigations: NavigationData[] = viewConfig?.Navigations || [];
+  const navigationOptions = navigations
+    .sort((a, b) => a.DisplayOrder - b.DisplayOrder)
+    .map((nav) => ({
+      value: nav.DisplayName.replace(/\s+/g, '-'),
+      label: nav.DisplayName,
+    }));
 
   if (loading) {
     return (
@@ -378,7 +457,7 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
               </span>
               <button
                 onClick={handleSaveClick}
-                disabled={changedCount === 0}
+                disabled={getChanges().length === 0}
                 className="px-3 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save size={12} /> Save
@@ -473,21 +552,41 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
         />
 
         {isEditMode && (
-          <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-4 py-3 text-xs text-gray-300 max-w-xs">
+          <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-4 py-3 text-xs text-gray-300 max-w-sm">
             <p className="font-medium text-white mb-1">Edit Mode</p>
             <p>Drag hotspots to reposition them. Click a hotspot to select it.</p>
-            {selectedHotspotId && (
-              <p className="mt-1 text-blue-400">
-                Selected: {(() => {
-                  const allHotspots: any[] = [];
-                  hotspotGroups.forEach((g: any) => (g.Hotspots || []).forEach((h: any) => allHotspots.push(h)));
-                  const h = allHotspots.find((h: any) => h.Id === selectedHotspotId);
-                  return h?.Name || 'Unknown';
-                })()}
-              </p>
-            )}
+            {selectedHotspotId && (() => {
+              const allHotspots: any[] = [];
+              hotspotGroups.forEach((g: any) => (g.Hotspots || []).forEach((h: any) => allHotspots.push(h)));
+              const h = allHotspots.find((hs: any) => hs.Id === selectedHotspotId);
+              if (!h) return null;
+              const currentName = nameOverrides[selectedHotspotId] ?? h.Name ?? '';
+              return (
+                <div className="mt-2 border-t border-gray-600 pt-2">
+                  <p className="text-blue-400 font-medium mb-2">Selected: {h.Name || 'Unknown'}</p>
+                  <label className="text-gray-400 block mb-1">Navigation Target (Name)</label>
+                  <select
+                    value={currentName}
+                    onChange={(e) => handleNameChange(selectedHotspotId, e.target.value)}
+                    className="w-full bg-gray-800 text-white border border-gray-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                  >
+                    <option value={h.Name}>{h.Name} (current)</option>
+                    {navigationOptions
+                      .filter((opt) => opt.value !== h.Name)
+                      .map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.value}
+                        </option>
+                      ))}
+                  </select>
+                  {nameOverrides[selectedHotspotId] !== undefined && nameOverrides[selectedHotspotId] !== h.Name && (
+                    <p className="mt-1 text-orange-400 text-[11px]">Changed: {h.Name} → {nameOverrides[selectedHotspotId]}</p>
+                  )}
+                </div>
+              );
+            })()}
             {changedCount > 0 && (
-              <p className="mt-1 text-orange-400">{changedCount} hotspot(s) modified</p>
+              <p className="mt-2 text-orange-400">{changedCount} hotspot(s) modified</p>
             )}
           </div>
         )}

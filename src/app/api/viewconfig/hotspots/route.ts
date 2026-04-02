@@ -8,27 +8,41 @@ export async function PUT(request: NextRequest) {
 
     if (!updates || !Array.isArray(updates) || updates.length === 0) {
       return NextResponse.json(
-        { error: 'Provide an array of updates with id and positionJson' },
+        { error: 'Provide an array of updates with id and at least one of positionJson or name' },
         { status: 400 }
       );
     }
 
     const results = [];
     for (const update of updates) {
-      const { id, positionJson } = update;
-      if (!id || !positionJson) {
+      const { id, positionJson, name } = update;
+      if (!id || (!positionJson && name === undefined)) {
         return NextResponse.json(
-          { error: 'Each update must have id and positionJson' },
+          { error: 'Each update must have id and at least one of positionJson or name' },
           { status: 400 }
         );
       }
 
-      await prisma.$executeRaw`
-        UPDATE "Hotspots"
-        SET "PositionJson" = ${positionJson}
-        WHERE "Id" = ${id}::uuid
-      `;
-      results.push({ id, positionJson });
+      if (positionJson && name !== undefined) {
+        await prisma.$executeRaw`
+          UPDATE "Hotspots"
+          SET "PositionJson" = ${positionJson}, "Name" = ${name}
+          WHERE "Id" = ${id}::uuid
+        `;
+      } else if (positionJson) {
+        await prisma.$executeRaw`
+          UPDATE "Hotspots"
+          SET "PositionJson" = ${positionJson}
+          WHERE "Id" = ${id}::uuid
+        `;
+      } else if (name !== undefined) {
+        await prisma.$executeRaw`
+          UPDATE "Hotspots"
+          SET "Name" = ${name}
+          WHERE "Id" = ${id}::uuid
+        `;
+      }
+      results.push({ id, ...(positionJson && { positionJson }), ...(name !== undefined && { name }) });
     }
 
     return NextResponse.json({

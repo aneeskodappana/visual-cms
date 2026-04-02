@@ -229,7 +229,7 @@ export default function ThreeSixtyViewer({
       {/* Hotspot selector panel */}
       {defaultGroup && defaultGroup.Hotspots.length > 1 && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2">
-          {defaultGroup.Hotspots.map((hotspot) => (
+          {relatedHotspots.map((hotspot) => (
             <button
               key={hotspot.Id}
               onClick={() => handleHotSpotClick(hotspot)}
