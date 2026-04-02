@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, Pencil, Save, X, Copy, Trash2 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
 const ThreeSixtyViewer = dynamic(
@@ -236,6 +237,7 @@ function HotspotConfirmationModal({
 }
 
 export default function Layout3DPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const [viewConfig, setViewConfig] = useState<ViewConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -283,6 +285,30 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
   const handleHotspotClick = useCallback((hotspot: any) => {
     setSelectedHotspotId(hotspot.Id);
   }, []);
+
+  const handleHotspotNavigate = useCallback(async (hotspot: any) => {
+    const name = hotspot.Name;
+    if (!name) return;
+
+    const parentCode = viewConfig?.Code || '';
+    const lastUnderscoreIdx = parentCode.lastIndexOf('_');
+    const prefix = lastUnderscoreIdx >= 0 ? parentCode.substring(0, lastUnderscoreIdx + 1) : '';
+    const targetCode = `${prefix}${name}`;
+
+    try {
+      const response = await fetch(`/api/viewconfig/search?code=${encodeURIComponent(targetCode)}&codeMatchType=exact`);
+      const data = await response.json();
+      if (data.data && data.data.length > 0) {
+        const targetConfig = data.data[0];
+        router.push(targetConfig.Layout3D
+          ? `/viewconfig/${targetConfig.Id}/layout3d`
+          : `/viewconfig/${targetConfig.Id}`
+        );
+      }
+    } catch (err) {
+      console.error('Navigation error:', err);
+    }
+  }, [router, viewConfig]);
 
   const handleHotspotDrag = useCallback((hotspotId: string, position: { x: number; y: number; z: number }) => {
     setPositionOverrides((prev) => ({
@@ -656,12 +682,12 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
       {/* Header */}
       <div className={`flex items-center justify-between px-4 py-2 border-b z-10 ${isEditMode ? 'bg-orange-900/30 border-orange-700' : 'bg-gray-800 border-gray-700'}`}>
         <div className="flex items-center gap-3">
-          <Link
-            href="/viewconfig-search"
+          <button
+            onClick={() => router.back()}
             className="text-gray-400 hover:text-white flex items-center gap-1 transition-colors"
           >
             <ChevronLeft size={16} />
-          </Link>
+          </button>
           <div>
             <h1 className="text-sm font-semibold text-white truncate">
               {viewConfig.Title || 'Untitled'}
@@ -776,6 +802,7 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
           positionOverrides={positionOverrides}
           onHotspotClick={handleHotspotClick}
           onHotspotDrag={handleHotspotDrag}
+          onHotspotNavigate={handleHotspotNavigate}
           hiddenHotspotIds={deletedHotspotIds}
         />
 

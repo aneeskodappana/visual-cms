@@ -52,6 +52,7 @@ interface ThreeSixtyViewerProps {
   positionOverrides?: Record<string, { x: number; y: number; z: number }>;
   onHotspotClick?: (hotspot: HotspotData) => void;
   onHotspotDrag?: (hotspotId: string, position: { x: number; y: number; z: number }) => void;
+  onHotspotNavigate?: (hotspot: HotspotData) => void;
   hiddenHotspotIds?: Set<string>;
 }
 
@@ -101,6 +102,7 @@ export default function ThreeSixtyViewer({
   positionOverrides = {},
   onHotspotClick,
   onHotspotDrag,
+  onHotspotNavigate,
   hiddenHotspotIds = new Set(),
 }: ThreeSixtyViewerProps) {
   const aspectRatioRef = useRef(0);
@@ -155,6 +157,8 @@ export default function ThreeSixtyViewer({
   const handleHotSpotClick = (hotspot: HotspotData) => {
     if (isEditMode) {
       onHotspotClick?.(hotspot);
+    } else if (onHotspotNavigate) {
+      onHotspotNavigate(hotspot);
     } else {
       setCurrentHotspot(hotspot);
     }
