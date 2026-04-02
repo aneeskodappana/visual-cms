@@ -6,50 +6,14 @@ export default function Home() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Visual CMS</h1>
-          <p className="text-lg text-slate-600">Database Connection & Schema Inspector</p>
+          <h1 className="text-4xl font-bold text-slate-900 mb-2">WOACMS</h1>
         </div>
 
         {/* Main Content */}
         <main className="space-y-8">
           {/* Database Test Section */}
-          <section>
-            <h2 className="text-2xl font-semibold text-slate-900 mb-4">Database Status</h2>
-            <DatabaseTestComponent />
-          </section>
-
-          {/* Schema Information */}
-          <section className="p-6 bg-white border border-slate-200 rounded-lg shadow-sm">
-            <h2 className="text-2xl font-semibold text-slate-900 mb-4">Schema Overview</h2>
-            <p className="text-slate-600 mb-4">
-              This application uses Prisma ORM to manage the visual CMS database with PostgreSQL. 
-              The schema includes models for managing views, layouts, markers, galleries, and more.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 rounded border border-slate-200">
-                <h3 className="font-semibold text-slate-900 mb-2">Core Models</h3>
-                <ul className="text-sm text-slate-700 space-y-1">
-                  <li>• ViewConfig - Configuration for different view types</li>
-                  <li>• Layout2D - 2D layout with markers and backplates</li>
-                  <li>• Layout3D - 3D layout with hotspots</li>
-                  <li>• Navigation - Navigation items for view configs</li>
-                </ul>
-              </div>
-              <div className="p-4 bg-slate-50 rounded border border-slate-200">
-                <h3 className="font-semibold text-slate-900 mb-2">Hierarchy Models</h3>
-                <ul className="text-sm text-slate-700 space-y-1">
-                  <li>• Nation - Top-level geographic entity</li>
-                  <li>• City - City within a nation</li>
-                  <li>• Project - Project within a city</li>
-                  <li>• Cluster - Property cluster within a project</li>
-                </ul>
-              </div>
-            </div>
-          </section>
-
           {/* Quick Links */}
           <section className="p-6 bg-white border border-slate-200 rounded-lg shadow-sm">
-            <h2 className="text-2xl font-semibold text-slate-900 mb-4">Quick Links</h2>
             <div className="flex flex-wrap gap-3">
               <a
                 href="/viewconfig-search"
@@ -75,22 +39,13 @@ export default function Home() {
               >
                 View Raw API Response
               </a>
-              <a
-                href="https://github.com/prisma/prisma"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 bg-slate-300 text-slate-900 rounded hover:bg-slate-400 transition-colors text-sm font-medium"
-              >
-                Prisma Documentation
-              </a>
             </div>
           </section>
+          <section>
+            <h2 className="text-2xl font-semibold text-slate-900 mb-4">Database Status</h2>
+            <DatabaseTestComponent />
+          </section>
         </main>
-
-        {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-slate-200 text-center text-slate-600 text-sm">
-          <p>Visual CMS - Built with Next.js, Prisma, and PostgreSQL</p>
-        </footer>
       </div>
     </div>
   );
