@@ -20,11 +20,12 @@ function toUuidSql(value: string | null | undefined): string {
   return `'${escapeSqlString(value)}'::uuid`;
 }
 
-function buildBulkInsert(table: string, columns: string[], rows: SqlValue[][]): string {
+function buildBulkInsert(table: string, columns: string[], rows: SqlValue[][], onConflict?: string): string {
   if (rows.length === 0) return '';
   const colList = columns.map((c) => `"${c}"`).join(', ');
   const valueRows = rows.map((row) => `  (${row.map(toSqlValue).join(', ')})`).join(',\n');
-  return `INSERT INTO "${table}" (${colList})\nVALUES\n${valueRows};\n`;
+  const conflict = onConflict ? `\n${onConflict}` : '';
+  return `INSERT INTO "${table}" (${colList})\nVALUES\n${valueRows}${conflict};\n`;
 }
 
 function generateViewConfigInserts(viewConfigs: any[]): string {
@@ -363,14 +364,404 @@ export function generateInsertSql(selectedViewConfigs: any[]): string {
   return parts.join('\n');
 }
 
-export function downloadSqlFile(sql: string): void {
+// ============ Unit SQL Export ============
+
+function generateUnitInserts(units: any[]): string {
+  const columns = [
+    'Id', 'Code', 'Title', 'IsVisible', 'IsExplorable',
+    'UnitType', 'UnitStatus', 'UnitCategory', 'FeatureSpecification',
+    'IsPremium', 'SaleableArea', 'BalconyArea', 'PlotArea', 'PaymentPlan', 'Price',
+    'OnlineStatus', 'LocationId', 'DownPaymentPercentage', 'DisableUnit',
+    'ClusterName', 'BedroomCount', 'BathroomCount', 'UnitNumber',
+    'Plex', 'Mirror', 'DefaultFloor', 'FloorsOccupied', 'NorthBearing',
+    'IsFurnished', 'SalesAgentId', 'HasInterior', 'HasFloorplan', 'DisplayName',
+    'IsShowHome', 'HasUniqueView', 'EnableForKiosk',
+    'UnitVariantId', 'PropertyFloorId',
+  ];
+  const rows = units.map((u) => [
+    u.Id, u.Code, u.Title, u.IsVisible, u.IsExplorable,
+    u.UnitType, u.UnitStatus, u.UnitCategory, u.FeatureSpecification,
+    u.IsPremium, u.SaleableArea, u.BalconyArea, u.PlotArea, u.PaymentPlan, u.Price,
+    u.OnlineStatus, u.LocationId, u.DownPaymentPercentage, u.DisableUnit,
+    u.ClusterName, u.BedroomCount, u.BathroomCount, u.UnitNumber,
+    u.Plex, u.Mirror, u.DefaultFloor, u.FloorsOccupied, u.NorthBearing,
+    u.IsFurnished, u.SalesAgentId, u.HasInterior, u.HasFloorplan, u.DisplayName,
+    u.IsShowHome, u.HasUniqueView, u.EnableForKiosk,
+    u.UnitVariantId, u.PropertyFloorId,
+  ]);
+  return buildBulkInsert('Units', columns, rows);
+}
+
+function generateUnitVariantInserts(units: any[]): string {
+  const columns = ['Id', 'Code', 'Title'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const u of units) {
+    const uv = u.UnitVariant;
+    if (!uv || seen.has(uv.Id)) continue;
+    seen.add(uv.Id);
+    rows.push([uv.Id, uv.Code, uv.Title]);
+  }
+  return buildBulkInsert('UnitVariants', columns, rows, 'ON CONFLICT ("Code") DO NOTHING');
+}
+
+function generateUnitVariantExteriorInsertsFromUnits(units: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'UnitVariantId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const u of units) {
+    const uv = u.UnitVariant;
+    if (!uv) continue;
+    for (const uve of uv.UnitVariantExteriors || []) {
+      if (seen.has(uve.Id)) continue;
+      seen.add(uve.Id);
+      rows.push([uve.Id, uve.Code, uve.Title, uve.IsVisible, uve.IsExplorable, uve.UnitVariantId ?? uv.Id]);
+    }
+  }
+  return buildBulkInsert('UnitVariantExteriors', columns, rows);
+}
+
+function generateUnitVariantFloorInsertsFromUnits(units: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'UnitVariantId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const u of units) {
+    const uv = u.UnitVariant;
+    if (!uv) continue;
+    for (const uvf of uv.UnitVariantFloors || []) {
+      if (seen.has(uvf.Id)) continue;
+      seen.add(uvf.Id);
+      rows.push([uvf.Id, uvf.Code, uvf.Title, uvf.IsVisible, uvf.IsExplorable, uvf.UnitVariantId ?? uv.Id]);
+    }
+  }
+  return buildBulkInsert('UnitVariantFloors', columns, rows);
+}
+
+function generateUnitVariantInteriorInsertsFromUnits(units: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'UnitVariantId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const u of units) {
+    const uv = u.UnitVariant;
+    if (!uv) continue;
+    for (const uvi of uv.UnitVariantInteriors || []) {
+      if (seen.has(uvi.Id)) continue;
+      seen.add(uvi.Id);
+      rows.push([uvi.Id, uvi.Code, uvi.Title, uvi.IsVisible, uvi.IsExplorable, uvi.UnitVariantId ?? uv.Id]);
+    }
+  }
+  return buildBulkInsert('UnitVariantInteriors', columns, rows);
+}
+
+function generatePropertyFloorInsertsFromUnits(units: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'PropertyId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const u of units) {
+    const pf = u.PropertyFloor;
+    if (!pf || seen.has(pf.Id)) continue;
+    seen.add(pf.Id);
+    rows.push([pf.Id, pf.Code, pf.Title, pf.IsVisible, pf.IsExplorable, pf.PropertyId]);
+  }
+  return buildBulkInsert('PropertyFloors', columns, rows);
+}
+
+function generatePropertyInsertsFromUnits(units: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'CommunityName', 'ClusterId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const u of units) {
+    const prop = u.PropertyFloor?.Property;
+    if (!prop || seen.has(prop.Id)) continue;
+    seen.add(prop.Id);
+    rows.push([prop.Id, prop.Code, prop.Title, prop.IsVisible, prop.IsExplorable, prop.CommunityName, prop.ClusterId]);
+  }
+  return buildBulkInsert('Properties', columns, rows);
+}
+
+export function generateUnitInsertSql(selectedUnits: any[]): string {
+  if (selectedUnits.length === 0) return '';
+
+  const parts: string[] = [];
+  const unitCodes = selectedUnits.map((u) => u.Code).join(', ');
+
+  parts.push(`-- SQL Export for ${selectedUnits.length} Unit(s): ${unitCodes}`);
+  parts.push(`-- Generated at: ${new Date().toISOString()}`);
+  parts.push('');
+  parts.push('BEGIN;');
+  parts.push('');
+
+  const generators = [
+    { label: 'UnitVariants', fn: generateUnitVariantInserts },
+    { label: 'UnitVariantExteriors', fn: generateUnitVariantExteriorInsertsFromUnits },
+    { label: 'UnitVariantFloors', fn: generateUnitVariantFloorInsertsFromUnits },
+    { label: 'UnitVariantInteriors', fn: generateUnitVariantInteriorInsertsFromUnits },
+    { label: 'Properties', fn: generatePropertyInsertsFromUnits },
+    { label: 'PropertyFloors', fn: generatePropertyFloorInsertsFromUnits },
+    { label: 'Units', fn: generateUnitInserts },
+  ];
+
+  for (const { label, fn } of generators) {
+    const sql = fn(selectedUnits);
+    if (sql) {
+      parts.push(`-- ${label}`);
+      parts.push(sql);
+    }
+  }
+
+  parts.push('COMMIT;');
+  parts.push('');
+
+  return parts.join('\n');
+}
+
+// ============ Project SQL Export ============
+
+function generateProjectInserts(projects: any[]): string {
+  const columns = [
+    'Id', 'Code', 'MulesoftCode', 'CommunityKey', 'Title', 'IsVisible', 'IsExplorable', 'CityId',
+  ];
+  const rows = projects.map((p) => [
+    p.Id, p.Code, p.MulesoftCode, p.CommunityKey, p.Title, p.IsVisible, p.IsExplorable, p.CityId,
+  ]);
+  return buildBulkInsert('Projects', columns, rows);
+}
+
+function generateCityInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'NationId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    const city = p.City;
+    if (!city || seen.has(city.Id)) continue;
+    seen.add(city.Id);
+    rows.push([city.Id, city.Code, city.Title, city.IsVisible, city.IsExplorable, city.NationId]);
+  }
+  return buildBulkInsert('Cities', columns, rows);
+}
+
+function generateNationInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    const nation = p.City?.Nation;
+    if (!nation || seen.has(nation.Id)) continue;
+    seen.add(nation.Id);
+    rows.push([nation.Id, nation.Code, nation.Title, nation.IsVisible, nation.IsExplorable]);
+  }
+  return buildBulkInsert('Nations', columns, rows);
+}
+
+function generateClusterInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'ProjectId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    for (const c of p.Clusters || []) {
+      if (seen.has(c.Id)) continue;
+      seen.add(c.Id);
+      rows.push([c.Id, c.Code, c.Title, c.IsVisible, c.IsExplorable, c.ProjectId ?? p.Id]);
+    }
+  }
+  return buildBulkInsert('Clusters', columns, rows);
+}
+
+function generatePropertyInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'CommunityName', 'ClusterId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    for (const c of p.Clusters || []) {
+      for (const prop of c.Properties || []) {
+        if (seen.has(prop.Id)) continue;
+        seen.add(prop.Id);
+        rows.push([prop.Id, prop.Code, prop.Title, prop.IsVisible, prop.IsExplorable, prop.CommunityName, prop.ClusterId ?? c.Id]);
+      }
+    }
+  }
+  return buildBulkInsert('Properties', columns, rows);
+}
+
+function generatePropertyFloorInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'PropertyId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    for (const c of p.Clusters || []) {
+      for (const prop of c.Properties || []) {
+        for (const pf of prop.PropertyFloors || []) {
+          if (seen.has(pf.Id)) continue;
+          seen.add(pf.Id);
+          rows.push([pf.Id, pf.Code, pf.Title, pf.IsVisible, pf.IsExplorable, pf.PropertyId ?? prop.Id]);
+        }
+      }
+    }
+  }
+  return buildBulkInsert('PropertyFloors', columns, rows);
+}
+
+function generateUnitInsertsFromProjects(projects: any[]): string {
+  const columns = [
+    'Id', 'Code', 'Title', 'IsVisible', 'IsExplorable',
+    'UnitType', 'UnitStatus', 'UnitCategory', 'FeatureSpecification',
+    'IsPremium', 'SaleableArea', 'BalconyArea', 'PlotArea', 'PaymentPlan', 'Price',
+    'OnlineStatus', 'LocationId', 'DownPaymentPercentage', 'DisableUnit',
+    'ClusterName', 'BedroomCount', 'BathroomCount', 'UnitNumber',
+    'Plex', 'Mirror', 'DefaultFloor', 'FloorsOccupied', 'NorthBearing',
+    'IsFurnished', 'SalesAgentId', 'HasInterior', 'HasFloorplan', 'DisplayName',
+    'IsShowHome', 'HasUniqueView', 'EnableForKiosk',
+    'UnitVariantId', 'PropertyFloorId',
+  ];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    for (const c of p.Clusters || []) {
+      for (const prop of c.Properties || []) {
+        for (const pf of prop.PropertyFloors || []) {
+          for (const u of pf.Units || []) {
+            if (seen.has(u.Id)) continue;
+            seen.add(u.Id);
+            rows.push([
+              u.Id, u.Code, u.Title, u.IsVisible, u.IsExplorable,
+              u.UnitType, u.UnitStatus, u.UnitCategory, u.FeatureSpecification,
+              u.IsPremium, u.SaleableArea, u.BalconyArea, u.PlotArea, u.PaymentPlan, u.Price,
+              u.OnlineStatus, u.LocationId, u.DownPaymentPercentage, u.DisableUnit,
+              u.ClusterName, u.BedroomCount, u.BathroomCount, u.UnitNumber,
+              u.Plex, u.Mirror, u.DefaultFloor, u.FloorsOccupied, u.NorthBearing,
+              u.IsFurnished, u.SalesAgentId, u.HasInterior, u.HasFloorplan, u.DisplayName,
+              u.IsShowHome, u.HasUniqueView, u.EnableForKiosk,
+              u.UnitVariantId, u.PropertyFloorId ?? pf.Id,
+            ]);
+          }
+        }
+      }
+    }
+  }
+  return buildBulkInsert('Units', columns, rows);
+}
+
+function generateAmenityInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'ProjectId', 'ClusterId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    for (const a of p.Amenities || []) {
+      if (seen.has(a.Id)) continue;
+      seen.add(a.Id);
+      rows.push([a.Id, a.Code, a.Title, a.IsVisible, a.IsExplorable, a.ProjectId ?? p.Id, a.ClusterId]);
+    }
+    for (const c of p.Clusters || []) {
+      for (const a of c.Amenities || []) {
+        if (seen.has(a.Id)) continue;
+        seen.add(a.Id);
+        rows.push([a.Id, a.Code, a.Title, a.IsVisible, a.IsExplorable, a.ProjectId, a.ClusterId ?? c.Id]);
+      }
+    }
+  }
+  return buildBulkInsert('Amenities', columns, rows);
+}
+
+function generateParkingFloorplanInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'ClusterId'];
+  const seen = new Set<string>();
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    for (const c of p.Clusters || []) {
+      for (const pf of c.ParkingFloorplans || []) {
+        if (seen.has(pf.Id)) continue;
+        seen.add(pf.Id);
+        rows.push([pf.Id, pf.Code, pf.Title, pf.IsVisible, pf.IsExplorable, pf.ClusterId ?? c.Id]);
+      }
+    }
+  }
+  return buildBulkInsert('ParkingFloorplans', columns, rows);
+}
+
+function generateProjectCacheInfoInserts(projects: any[]): string {
+  const columns = ['Id', 'MulesoftDataKey', 'ProcessedDataKey', 'ProjectId'];
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    const ci = p.CacheInfo;
+    if (!ci) continue;
+    rows.push([ci.Id, ci.MulesoftDataKey, ci.ProcessedDataKey, ci.ProjectId ?? p.Id]);
+  }
+  return buildBulkInsert('ProjectCacheInfo', columns, rows);
+}
+
+function generateProjectSalesLeadInfoInserts(projects: any[]): string {
+  const columns = [
+    'Id', 'LeadSource', 'EnquiryCategory', 'EnquiryTrigger', 'SalesType',
+    'PropertyUsage', 'ProjectName', 'OfferDomestic', 'OfferInternational', 'ProjectId',
+  ];
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    const sli = p.ProjectSalesLeadInfo;
+    if (!sli) continue;
+    rows.push([
+      sli.Id, sli.LeadSource, sli.EnquiryCategory, sli.EnquiryTrigger, sli.SalesType,
+      sli.PropertyUsage, sli.ProjectName, sli.OfferDomestic, sli.OfferInternational,
+      sli.ProjectId ?? p.Id,
+    ]);
+  }
+  return buildBulkInsert('ProjectSalesLeadInfo', columns, rows);
+}
+
+function generateProjectVariantsInfoInserts(projects: any[]): string {
+  const columns = ['Id', 'UnitVariantTypes', 'ProjectId'];
+  const rows: SqlValue[][] = [];
+  for (const p of projects) {
+    const vi = p.VariantInfo;
+    if (!vi) continue;
+    rows.push([vi.Id, vi.UnitVariantTypes, vi.ProjectId ?? p.Id]);
+  }
+  return buildBulkInsert('ProjectVariantsInfo', columns, rows);
+}
+
+export function generateProjectInsertSql(selectedProjects: any[]): string {
+  if (selectedProjects.length === 0) return '';
+
+  const parts: string[] = [];
+  const projectCodes = selectedProjects.map((p) => p.Code).join(', ');
+
+  parts.push(`-- SQL Export for ${selectedProjects.length} Project(s): ${projectCodes}`);
+  parts.push(`-- Generated at: ${new Date().toISOString()}`);
+  parts.push('');
+  parts.push('BEGIN;');
+  parts.push('');
+
+  const generators = [
+    { label: 'Projects', fn: generateProjectInserts },
+    { label: 'ProjectCacheInfo', fn: generateProjectCacheInfoInserts },
+    { label: 'ProjectSalesLeadInfo', fn: generateProjectSalesLeadInfoInserts },
+    { label: 'ProjectVariantsInfo', fn: generateProjectVariantsInfoInserts },
+    { label: 'Clusters', fn: generateClusterInsertsFromProjects },
+    { label: 'Amenities', fn: generateAmenityInsertsFromProjects },
+    { label: 'ParkingFloorplans', fn: generateParkingFloorplanInsertsFromProjects },
+  ];
+
+  for (const { label, fn } of generators) {
+    const sql = fn(selectedProjects);
+    if (sql) {
+      parts.push(`-- ${label}`);
+      parts.push(sql);
+    }
+  }
+
+  parts.push('COMMIT;');
+  parts.push('');
+
+  return parts.join('\n');
+}
+
+export function downloadSqlFile(sql: string, prefix: string = 'viewconfig'): void {
   const now = new Date();
   const timestamp = now
     .toISOString()
     .replace(/T/, '_')
     .replace(/:/g, '-')
     .replace(/\.\d+Z$/, '');
-  const filename = `viewconfig_export_${timestamp}.sql`;
+  const filename = `${prefix}_export_${timestamp}.sql`;
 
   const blob = new Blob([sql], { type: 'application/sql' });
   const url = URL.createObjectURL(blob);

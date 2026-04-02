@@ -58,6 +58,18 @@ export default function Home() {
                 ViewConfig Search
               </a>
               <a
+                href="/unit-search"
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors text-sm font-medium"
+              >
+                Unit Search
+              </a>
+              <a
+                href="/project-search"
+                className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors text-sm font-medium"
+              >
+                Project Search
+              </a>
+              <a
                 href="/api/db-test"
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
               >
