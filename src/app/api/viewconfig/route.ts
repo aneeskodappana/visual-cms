@@ -60,3 +60,38 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { ids } = body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { error: 'Provide an array of ViewConfig IDs to delete' },
+        { status: 400 }
+      );
+    }
+
+    // Simple delete - rely on FK cascade deletes for children
+    const result = await prisma.viewConfig.deleteMany({
+      where: {
+        Id: {
+          in: ids
+        }
+      }
+    });
+
+    return NextResponse.json({
+      status: 'success',
+      deleted: result.count,
+      message: `Successfully deleted ${result.count} ViewConfig${result.count > 1 ? 's' : ''}`
+    });
+  } catch (error: any) {
+    console.error('ViewConfig delete error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to delete ViewConfigs' },
+      { status: 500 }
+    );
+  }
+}

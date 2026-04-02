@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
     const uuidQuery = searchParams.get('uuid');
     const kindQuery = searchParams.get('kind');
     const codeMatchType = searchParams.get('codeMatchType') || 'ilike'; // 'ilike' or 'exact'
+    const limitQuery = searchParams.get('limit');
+    const limit = limitQuery ? parseInt(limitQuery, 10) : 1000;
 
     if (!codeQuery && !uuidQuery && !kindQuery) {
       return NextResponse.json(
@@ -16,7 +18,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let results = [];
+    let results: any[] = [];
 
     // Build base filter with kind if provided
     const buildBaseWhere = () => {
@@ -54,6 +56,7 @@ export async function GET(request: NextRequest) {
     if (codeQuery) {
       results = await prisma.viewConfig.findMany({
         where: buildCodeWhere(),
+        take: limit,
         include: {
           Layout3D: {
             include: {
@@ -109,6 +112,7 @@ export async function GET(request: NextRequest) {
 
       const uuidResults = await prisma.viewConfig.findMany({
         where,
+        take: limit,
         include: {
           Layout3D: {
             include: {

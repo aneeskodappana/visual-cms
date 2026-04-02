@@ -4,13 +4,6 @@ export default function ViewConfigSearchPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-10xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">ViewConfig Search</h1>
-          <p className="text-lg text-slate-600">
-            Search and explore ViewConfig records with their complete relations
-          </p>
-        </div>
 
         {/* Search Component */}
         <ViewConfigSearchComponent />

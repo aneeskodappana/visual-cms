@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, ChevronRight, Search, Copy, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Copy, Check, Trash2 } from 'lucide-react';
 import { constructCdnUrl, constructMarkerIconUrl, getViewTypeName, getMarkerTypeName, getMarkerSubTypeName, ViewTypes } from '@/lib/cdnUtils';
 
 interface ViewConfigResult {
@@ -40,7 +40,13 @@ export function ViewConfigSearchComponent() {
   const [uuidInput, setUuidInput] = useState('');
   const [codeMatchType, setCodeMatchType] = useState<'ilike' | 'exact'>('exact');
   const [selectedKind, setSelectedKind] = useState<number | ''>('');
+  const [rowsPerPage, setRowsPerPage] = useState<number>(1000);
   const [results, setResults] = useState<ViewConfigResult[]>([]);
+  const [selectedViewConfigs, setSelectedViewConfigs] = useState<Set<string>>(new Set());
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteTab, setDeleteTab] = useState<'uuids' | 'codes'>('uuids');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -61,7 +67,7 @@ export function ViewConfigSearchComponent() {
 
     // If we have search params, perform the search
     if (code || uuid || kind) {
-      performSearch(code, uuid, matchType, kind ? Number(kind) : '');
+      performSearch(code, uuid, matchType, kind ? Number(kind) : '', rowsPerPage);
     }
   }, [searchParams]);
 
@@ -77,7 +83,7 @@ export function ViewConfigSearchComponent() {
     window.history.replaceState(null, '', queryString ? `?${queryString}` : '/viewconfig-search');
   };
 
-  const performSearch = async (code: string, uuid: string, matchType: string, kind: number | string) => {
+  const performSearch = async (code: string, uuid: string, matchType: string, kind: number | string, rowsPerPage: number) => {
     if (!code && !uuid && !kind) {
       setError('Please enter a code, UUID, or select a kind to search');
       return;
@@ -85,6 +91,7 @@ export function ViewConfigSearchComponent() {
 
     setLoading(true);
     setError(null);
+    setSelectedViewConfigs(new Set());
 
     try {
       const params = new URLSearchParams();
@@ -94,6 +101,7 @@ export function ViewConfigSearchComponent() {
       }
       if (uuid) params.append('uuid', uuid);
       if (kind) params.append('kind', String(kind));
+      params.append('limit', String(rowsPerPage));
 
       const response = await fetch(`/api/viewconfig/search?${params}`);
       const data = await response.json();
@@ -120,6 +128,60 @@ export function ViewConfigSearchComponent() {
     navigator.clipboard.writeText(text);
     setCopiedCell(cellId);
     setTimeout(() => setCopiedCell(null), 2000);
+  };
+
+  const handleSelectViewConfig = (viewConfigId: string, checked: boolean) => {
+    setSelectedViewConfigs((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(viewConfigId);
+      } else {
+        next.delete(viewConfigId);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const selectedIds = Array.from(selectedViewConfigs);
+      const response = await fetch('/api/viewconfig', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete ViewConfigs');
+      }
+
+      // Remove deleted items from results
+      setResults((prev) => prev.filter((r) => !selectedViewConfigs.has(r.Id)));
+      
+      // Clear selection and close modal
+      setSelectedViewConfigs(new Set());
+      setShowDeleteModal(false);
+      
+      // Show success message
+      alert(`Successfully deleted ${data.deleted} ViewConfig${data.deleted > 1 ? 's' : ''}`);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete ViewConfigs');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedViewConfigs(new Set(results.map((r) => r.Id)));
+    } else {
+      setSelectedViewConfigs(new Set());
+    }
   };
 
   const CopyButton = ({ text, cellId }: { text: string; cellId: string }) => (
@@ -199,8 +261,9 @@ export function ViewConfigSearchComponent() {
     setExpandedSections(newSet);
   };
 
-  const handleSearch = async () => {
-    performSearch(codeInput, uuidInput, codeMatchType, selectedKind);
+  const handleSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    performSearch(codeInput, uuidInput, codeMatchType, selectedKind, rowsPerPage);
   };
 
   const renderLayout2DTable = (layout2ds: any[], resultId: string, cdnBaseUrl?: string) => {
@@ -544,8 +607,8 @@ export function ViewConfigSearchComponent() {
   return (
     <div className="space-y-6">
       {/* Search Form */}
-      <div className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-4">Search ViewConfig</h2>
+      <form onSubmit={handleSearch} className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
+        <h2 className="text-2xl font-semibold text-gray-900 mb-4">View Configs</h2>
 
         <div className="flex flex-col lg:flex-row gap-4 items-end mb-4">
           {/* Code Input */}
@@ -627,38 +690,101 @@ export function ViewConfigSearchComponent() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
+
+          {/* Rows Per Page */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Rows Per Page
+            </label>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => setRowsPerPage(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value={100}>100</option>
+              <option value={500}>500</option>
+              <option value={1000}>1000</option>
+              <option value={2000}>2000</option>
+              <option value={5000}>5000</option>
+            </select>
+          </div>
+          <div className="flex-1">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium"
+            >
+              <Search size={18} />
+              {loading ? 'Searching...' : 'Search'}
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={handleSearch}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors font-medium"
-        >
-          <Search size={18} />
-          {loading ? 'Searching...' : 'Search'}
-        </button>
+       
 
         {error && (
           <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-red-800">{error}</p>
           </div>
         )}
-      </div>
+      </form>
 
       {/* Results */}
       {results.length > 0 && (
         <div className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">
-            Results ({results.length})
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-gray-900">
+              Results ({results.length})
+            </h3>
+            {selectedViewConfigs.size > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-600">
+                  {selectedViewConfigs.size} selected
+                </span>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center gap-1"
+                >
+                  <Trash2 size={12} /> Delete Selected
+                </button>
+                <button
+                  onClick={() => handleSelectAll(false)}
+                  className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
+            )}
+          </div>
+          {results.length > 0 && (
+            <div className="mb-4">
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={selectedViewConfigs.size === results.length && results.length > 0}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                Select All
+              </label>
+            </div>
+          )}
 
           <div className="space-y-3">
             {results.map((result) => (
               <div key={result.Id} className="border border-gray-300 rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleExpanded(result.Id)}
-                  className="w-full flex items-center gap-3 p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
-                >
+                <div className="flex items-center gap-3 p-4 bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={selectedViewConfigs.has(result.Id)}
+                    onChange={(e) => handleSelectViewConfig(result.Id, e.target.checked)}
+                    className="w-4 h-4"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button
+                    onClick={() => toggleExpanded(result.Id)}
+                    className="flex-1 flex items-center gap-3 transition-colors"
+                  >
                   {expandedIds.has(result.Id) ? (
                     <ChevronDown size={20} className="text-gray-600" />
                   ) : (
@@ -698,6 +824,7 @@ export function ViewConfigSearchComponent() {
                     )}
                   </div>
                 </button>
+                </div>
 
                 {expandedIds.has(result.Id) && (
                   <div className="p-4 bg-white space-y-4 border-t border-gray-300">
@@ -766,6 +893,149 @@ export function ViewConfigSearchComponent() {
       {results.length === 0 && !error && !loading && (
         <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg text-center">
           <p className="text-blue-800">Use the search form above to find ViewConfig records</p>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Delete {selectedViewConfigs.size} ViewConfig{selectedViewConfigs.size > 1 ? 's' : ''}
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                This action will permanently delete the selected ViewConfig records and all their related data.
+              </p>
+            </div>
+
+            <div className="p-6">
+              {/* Tabs */}
+              <div className="flex border-b border-gray-200 mb-4">
+                <button
+                  onClick={() => setDeleteTab('uuids')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    deleteTab === 'uuids'
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-gray-500 hover:text-gray-700 border-transparent'
+                  }`}
+                >
+                  UUIDs
+                </button>
+                <button
+                  onClick={() => setDeleteTab('codes')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    deleteTab === 'codes'
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-gray-500 hover:text-gray-700 border-transparent'
+                  }`}
+                >
+                  Codes
+                </button>
+              </div>
+
+              {/* UUIDs Tab */}
+              {deleteTab === 'uuids' && (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">PostgreSQL Delete Query (UUIDs)</h4>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <pre className="text-xs font-mono text-gray-800 whitespace-pre-wrap overflow-x-auto overflow-y-auto max-h-64">
+                        {`DELETE FROM "ViewConfigs"
+WHERE "Id" IN (
+${Array.from(selectedViewConfigs).map(id => `  '${id}'::uuid`).join(',\n')}
+);`}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          `DELETE FROM "ViewConfigs"\nWHERE "Id" IN (\n${Array.from(selectedViewConfigs).map(id => `  '${id}'::uuid`).join(',\n')}\n);`
+                        );
+                      }}
+                      className="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors flex items-center gap-1"
+                    >
+                      <Copy size={12} /> Copy UUID Query
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Codes Tab */}
+              {deleteTab === 'codes' && (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">PostgreSQL Delete Query (Codes)</h4>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <pre className="text-xs font-mono text-gray-800 whitespace-pre-wrap overflow-x-auto overflow-y-auto max-h-64">
+                        {`DELETE FROM "ViewConfigs"
+WHERE "Code" IN (
+${Array.from(selectedViewConfigs)
+  .map(id => {
+    const result = results.find(r => r.Id === id);
+    return result ? `  '${result.Code}'` : `  '${id}'`;
+  })
+  .join(',\n')}
+);`}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const codeQuery = `DELETE FROM "ViewConfigs"\nWHERE "Code" IN (\n${Array.from(selectedViewConfigs)
+                          .map(id => {
+                            const result = results.find(r => r.Id === id);
+                            return result ? `  '${result.Code}'` : `  '${id}'`;
+                          })
+                          .join(',\n')}\n);`;
+                        navigator.clipboard.writeText(codeQuery);
+                      }}
+                      className="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors flex items-center gap-1"
+                    >
+                      <Copy size={12} /> Copy Code Query
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {deleteError && (
+              <div className="px-6 py-4 bg-red-50 border-t border-red-200">
+                <p className="text-red-800 text-sm">{deleteError}</p>
+              </div>
+            )}
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteError(null);
+                }}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Deleting...
+                  </>
+                ) : (
+                  <>Delete {selectedViewConfigs.size} Record{selectedViewConfigs.size > 1 ? 's' : ''}</>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
