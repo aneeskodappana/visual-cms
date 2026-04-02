@@ -622,6 +622,7 @@ export function ViewConfigSearchComponent() {
               value={codeInput}
               onChange={(e) => setCodeInput(e.target.value)}
               placeholder="e.g., 'view' or 'config'"
+              minLength={3}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -707,6 +708,9 @@ export function ViewConfigSearchComponent() {
               <option value={1000}>1000</option>
               <option value={2000}>2000</option>
               <option value={5000}>5000</option>
+              <option value={10000}>10000</option>
+              <option value={50000}>50000</option>
+              <option value={100000}>100000</option>
             </select>
           </div>
           <div className="flex-1">
