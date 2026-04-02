@@ -256,6 +256,50 @@ function generateGeoLayerInserts(viewConfigs: any[]): string {
   return buildBulkInsert('GeoLayers', columns, rows);
 }
 
+function generateVideoTransitionInserts(viewConfigs: any[]): string {
+  const columns = [
+    'Id', 'FromLayout2dId', 'ToLayout2dId', 'FromLayout3dId', 'ToLayout3dId',
+    'MediaUrl', 'Theme', 'Version',
+  ];
+  const rows: SqlValue[][] = [];
+  for (const vc of viewConfigs) {
+    for (const l2d of vc.Layout2Ds || []) {
+      for (const vt of l2d.FromTransitions || []) {
+        rows.push([
+          vt.Id, vt.FromLayout2dId ?? l2d.Id, vt.ToLayout2dId,
+          vt.FromLayout3dId, vt.ToLayout3dId,
+          vt.MediaUrl, vt.Theme, vt.Version,
+        ]);
+      }
+      for (const vt of l2d.ToTransitions || []) {
+        rows.push([
+          vt.Id, vt.FromLayout2dId, vt.ToLayout2dId ?? l2d.Id,
+          vt.FromLayout3dId, vt.ToLayout3dId,
+          vt.MediaUrl, vt.Theme, vt.Version,
+        ]);
+      }
+    }
+    const l3d = vc.Layout3D;
+    if (l3d) {
+      for (const vt of l3d.FromTransitions || []) {
+        rows.push([
+          vt.Id, vt.FromLayout2dId, vt.ToLayout2dId,
+          vt.FromLayout3dId ?? l3d.Id, vt.ToLayout3dId,
+          vt.MediaUrl, vt.Theme, vt.Version,
+        ]);
+      }
+      for (const vt of l3d.ToTransitions || []) {
+        rows.push([
+          vt.Id, vt.FromLayout2dId, vt.ToLayout2dId,
+          vt.FromLayout3dId, vt.ToLayout3dId ?? l3d.Id,
+          vt.MediaUrl, vt.Theme, vt.Version,
+        ]);
+      }
+    }
+  }
+  return buildBulkInsert('VideoTransitions', columns, rows);
+}
+
 function generateGeoLayerDataInserts(viewConfigs: any[]): string {
   const columns = [
     'Id', 'SourceType', 'SourceLayer', 'CoordinatesJson',
@@ -302,6 +346,7 @@ export function generateInsertSql(selectedViewConfigs: any[]): string {
     { label: 'Overlays', fn: generateOverlayInserts },
     { label: 'GeoLayers', fn: generateGeoLayerInserts },
     { label: 'GeoLayerData', fn: generateGeoLayerDataInserts },
+    { label: 'VideoTransitions', fn: generateVideoTransitionInserts },
   ];
 
   for (const { label, fn } of generators) {
