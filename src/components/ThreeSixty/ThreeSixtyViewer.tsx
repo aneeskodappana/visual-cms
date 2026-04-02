@@ -52,6 +52,7 @@ interface ThreeSixtyViewerProps {
   positionOverrides?: Record<string, { x: number; y: number; z: number }>;
   onHotspotClick?: (hotspot: HotspotData) => void;
   onHotspotDrag?: (hotspotId: string, position: { x: number; y: number; z: number }) => void;
+  hiddenHotspotIds?: Set<string>;
 }
 
 const BLOB_BASE_URL = 'https://worlddev.aldar.com/assets/';
@@ -100,6 +101,7 @@ export default function ThreeSixtyViewer({
   positionOverrides = {},
   onHotspotClick,
   onHotspotDrag,
+  hiddenHotspotIds = new Set(),
 }: ThreeSixtyViewerProps) {
   const aspectRatioRef = useRef(0);
   const [cursorStyle, setCursorStyle] = useState(VIDEO_VIEWER_CONSTANTS.CURSOR_STYLE);
@@ -186,7 +188,7 @@ export default function ThreeSixtyViewer({
           target={[0, 0, 0]}
         />
 
-        {(isEditMode ? (defaultGroup?.Hotspots ?? []) : relatedHotspots).map((hotspot) => {
+        {(isEditMode ? (defaultGroup?.Hotspots ?? []) : relatedHotspots).filter((h) => !hiddenHotspotIds.has(h.Id)).map((hotspot) => {
           const override = positionOverrides[hotspot.Id];
           const pos = override || parsePosition(hotspot.PositionJson);
           const spherePos = convertToSpherePosition(pos.x, pos.y, pos.z);
@@ -239,7 +241,7 @@ export default function ThreeSixtyViewer({
                   : 'bg-white/20 text-white hover:bg-white/30'
               }`}
             >
-              {hotspot.Name || `Hotspot ${hotspot.HotspotIndex}`}
+              {hotspot.Name.replace("-", " ") || `Hotspot ${hotspot.HotspotIndex}`}
             </button>
           ))}
         </div>

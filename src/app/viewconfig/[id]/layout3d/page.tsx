@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, Pencil, Save, X } from 'lucide-react';
+import { ChevronLeft, Pencil, Save, X, Copy, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 
@@ -30,6 +30,15 @@ interface ViewConfigData {
   Navigations: NavigationData[];
 }
 
+interface DuplicatedHotspot {
+  id: string;
+  sourceHotspot: any;
+  hotspotGroupId: string;
+  hotspotIndex: number;
+  name: string;
+  position: { x: number; y: number; z: number };
+}
+
 interface HotspotChange {
   hotspotId: string;
   hotspotName: string;
@@ -38,6 +47,9 @@ interface HotspotChange {
   newPosition?: { x: number; y: number; z: number };
   oldName?: string;
   newName?: string;
+  isDuplicate?: boolean;
+  duplicateData?: DuplicatedHotspot;
+  isDelete?: boolean;
 }
 
 const SPHERE_RADIUS = 4;
@@ -77,6 +89,17 @@ function parsePosition(positionJson: string): { x: number; y: number; z: number 
 }
 
 function buildSqlForChange(change: HotspotChange): string {
+  if (change.isDelete) {
+    return `-- DELETE: ${change.hotspotName}\nDELETE FROM "Hotspots"\n  WHERE "Id" = '${change.hotspotId}'::uuid;`;
+  }
+  if (change.isDuplicate && change.duplicateData) {
+    const d = change.duplicateData;
+    const pos = change.newPosition
+      ? { x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) }
+      : d.position;
+    const name = change.newName ?? d.name;
+    return `-- NEW: ${name} (duplicated from ${d.sourceHotspot.Name})\nINSERT INTO "Hotspots" (\n  "Id", "HotspotIndex", "IsVisible", "IsExplorable", "Name",\n  "MediaUrl", "MediaVersion", "MediaThumbnailUrl", "MediaThumbnailVersion",\n  "PositionJson", "OffsetRotationJson", "DefaultCameraRotationJson",\n  "CameraSettingsJson", "HotspotGroupId"\n) VALUES (\n  gen_random_uuid(), ${d.hotspotIndex}, true, true, '${name}',\n  '${d.sourceHotspot.MediaUrl || ''}', ${d.sourceHotspot.MediaVersion || 1}, '${d.sourceHotspot.MediaThumbnailUrl || ''}', ${d.sourceHotspot.MediaThumbnailVersion || 1},\n  '${JSON.stringify(pos)}', '${d.sourceHotspot.OffsetRotationJson || ''}', '${d.sourceHotspot.DefaultCameraRotationJson || ''}',\n  '${JSON.stringify(d.sourceHotspot.CameraSettingsJson || { version: 1, default: { fov: 90 } })}'::jsonb, '${d.hotspotGroupId}'::uuid\n);`;
+  }
   const setClauses: string[] = [];
   if (change.newPosition) {
     const pos = { x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) };
@@ -123,11 +146,22 @@ function HotspotConfirmationModal({
                     <div className="text-[11px] text-gray-400 font-mono">{change.hotspotId}</div>
                   </td>
                   <td className="py-3 text-xs space-y-2">
+                    {change.isDelete && (
+                      <div>
+                        <span className="inline-block px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium text-[11px]">DELETE</span>
+                      </div>
+                    )}
+                    {change.isDuplicate && (
+                      <div>
+                        <span className="inline-block px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-medium text-[11px] mb-1">NEW (Duplicate)</span>
+                        <div className="text-gray-500">Source: {change.duplicateData?.sourceHotspot.Name}</div>
+                      </div>
+                    )}
                     {change.newName !== undefined && (
                       <div>
                         <span className="text-gray-500 font-medium">Name:</span>
-                        <span className="ml-2 text-red-600 line-through">{change.oldName}</span>
-                        <span className="ml-2 text-green-600 font-medium">{change.newName}</span>
+                        {change.oldName && <span className="ml-2 text-red-600 line-through">{change.oldName}</span>}
+                        <span className="ml-2 text-green-600 font-medium">{change.newName ?? change.hotspotName}</span>
                       </div>
                     )}
                     {change.newPosition && change.oldPositionSphere && (
@@ -136,6 +170,14 @@ function HotspotConfirmationModal({
                         <span className="text-red-600">
                           x: {change.oldPositionSphere.x.toFixed(4)}, y: {change.oldPositionSphere.y.toFixed(4)}, z: {change.oldPositionSphere.z.toFixed(4)}
                         </span><br />
+                        <span className="text-green-600">
+                          x: {change.newPosition.x.toFixed(4)}, y: {change.newPosition.y.toFixed(4)}, z: {change.newPosition.z.toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                    {change.isDuplicate && change.newPosition && !change.oldPositionSphere && (
+                      <div className="font-mono">
+                        <span className="text-gray-500 font-medium font-sans">Position:</span><br />
                         <span className="text-green-600">
                           x: {change.newPosition.x.toFixed(4)}, y: {change.newPosition.y.toFixed(4)}, z: {change.newPosition.z.toFixed(4)}
                         </span>
@@ -162,24 +204,11 @@ function HotspotConfirmationModal({
             </div>
             <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap">
               <div className="text-gray-500 mb-2">-- BEGIN TRANSACTION</div>
-              {changes.map((change) => {
-                const setClauses: string[] = [];
-                if (change.newPosition) {
-                  const pos = { x: +change.newPosition.x.toFixed(4), y: +change.newPosition.y.toFixed(4), z: +change.newPosition.z.toFixed(4) };
-                  setClauses.push(`"PositionJson" = '${JSON.stringify(pos)}'`);
-                }
-                if (change.newName !== undefined) {
-                  setClauses.push(`"Name" = '${change.newName}'`);
-                }
-                return (
-                  <div key={change.hotspotId} className="mb-2">
-                    <span className="text-gray-500">-- {change.hotspotName}</span><br />
-                    UPDATE &quot;Hotspots&quot;<br />
-                    &nbsp;&nbsp;SET {setClauses.join(', ')}<br />
-                    &nbsp;&nbsp;WHERE &quot;Id&quot; = &apos;{change.hotspotId}&apos;::uuid;
-                  </div>
-                );
-              })}
+              {changes.map((change) => (
+                <div key={change.hotspotId} className="mb-2" style={{ whiteSpace: 'pre-wrap' }}>
+                  {buildSqlForChange(change)}
+                </div>
+              ))}
               <div className="text-gray-500 mt-2">-- COMMIT;</div>
             </div>
           </div>
@@ -216,6 +245,8 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
   const [selectedHotspotId, setSelectedHotspotId] = useState<string | null>(null);
   const [positionOverrides, setPositionOverrides] = useState<Record<string, { x: number; y: number; z: number }>>({});
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({});
+  const [duplicatedHotspots, setDuplicatedHotspots] = useState<DuplicatedHotspot[]>([]);
+  const [deletedHotspotIds, setDeletedHotspotIds] = useState<Set<string>>(new Set());
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -270,11 +301,25 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
       (group.Hotspots || []).forEach((h: any) => allHotspots.push(h));
     });
 
-    const changedIds = new Set([...Object.keys(positionOverrides), ...Object.keys(nameOverrides)]);
-    return Array.from(changedIds)
+    const deleteChanges: HotspotChange[] = Array.from(deletedHotspotIds)
       .map((hotspotId) => {
         const hotspot = allHotspots.find((h) => h.Id === hotspotId);
         if (!hotspot) return null;
+        return {
+          hotspotId,
+          hotspotName: hotspot.Name || `Hotspot ${hotspot.HotspotIndex}`,
+          isDelete: true,
+        };
+      })
+      .filter(Boolean) as HotspotChange[];
+
+    const changedIds = new Set([...Object.keys(positionOverrides), ...Object.keys(nameOverrides)]);
+    const updateChanges = Array.from(changedIds)
+      .filter((id) => !deletedHotspotIds.has(id))
+      .map((hotspotId) => {
+        const hotspot = allHotspots.find((h) => h.Id === hotspotId);
+        if (!hotspot) return null;
+        if (duplicatedHotspots.some((d) => d.id === hotspotId)) return null;
 
         const change: HotspotChange = {
           hotspotId,
@@ -297,7 +342,22 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
         return change;
       })
       .filter(Boolean) as HotspotChange[];
-  }, [viewConfig, positionOverrides, nameOverrides]);
+
+    const insertChanges: HotspotChange[] = duplicatedHotspots.map((dup) => {
+      const pos = positionOverrides[dup.id] ?? dup.position;
+      const name = nameOverrides[dup.id] ?? dup.name;
+      return {
+        hotspotId: dup.id,
+        hotspotName: name,
+        newPosition: pos,
+        newName: name,
+        isDuplicate: true,
+        duplicateData: dup,
+      };
+    });
+
+    return [...deleteChanges, ...updateChanges, ...insertChanges];
+  }, [viewConfig, positionOverrides, nameOverrides, duplicatedHotspots, deletedHotspotIds]);
 
   const handleNameChange = useCallback((hotspotId: string, newName: string) => {
     setNameOverrides((prev) => ({
@@ -305,6 +365,105 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
       [hotspotId]: newName,
     }));
   }, []);
+
+  const handleDelete = useCallback((hotspotId: string) => {
+    const isDup = duplicatedHotspots.some((d) => d.id === hotspotId);
+    if (isDup) {
+      setDuplicatedHotspots((prev) => prev.filter((d) => d.id !== hotspotId));
+      setViewConfig((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        updated.Layout3D = {
+          ...updated.Layout3D,
+          HotspotGroup: updated.Layout3D.HotspotGroup.map((group: any) => ({
+            ...group,
+            Hotspots: group.Hotspots.filter((h: any) => h.Id !== hotspotId),
+          })),
+        };
+        return updated;
+      });
+    } else {
+      setDeletedHotspotIds((prev) => new Set([...Array.from(prev), hotspotId]));
+    }
+    setSelectedHotspotId(null);
+    setPositionOverrides((prev) => { const next = { ...prev }; delete next[hotspotId]; return next; });
+    setNameOverrides((prev) => { const next = { ...prev }; delete next[hotspotId]; return next; });
+  }, [duplicatedHotspots]);
+
+  const handleDuplicate = useCallback((hotspot: any) => {
+    const allHotspots: any[] = [];
+    const layout3D = viewConfig?.Layout3D;
+    if (!layout3D) return;
+    (layout3D.HotspotGroup || []).forEach((g: any) =>
+      (g.Hotspots || []).forEach((h: any) => allHotspots.push(h))
+    );
+
+    const maxIndex = Math.max(...allHotspots.map((h: any) => h.HotspotIndex), ...duplicatedHotspots.map((d) => d.hotspotIndex), 0);
+    const newIndex = maxIndex + 1;
+
+    const oldPos = parsePosition(hotspot.PositionJson);
+    const spherePos = convertToSpherePosition(oldPos.x, oldPos.y, oldPos.z);
+    const offset = 0.3;
+    const offsetPos = {
+      x: spherePos.x + offset,
+      y: spherePos.y + offset,
+      z: spherePos.z,
+    };
+    const len = Math.sqrt(offsetPos.x ** 2 + offsetPos.y ** 2 + offsetPos.z ** 2);
+    const normalizedPos = {
+      x: (offsetPos.x / len) * SPHERE_RADIUS,
+      y: (offsetPos.y / len) * SPHERE_RADIUS,
+      z: (offsetPos.z / len) * SPHERE_RADIUS,
+    };
+
+    const tempId = `temp-${Date.now()}-${newIndex}`;
+    const dup: DuplicatedHotspot = {
+      id: tempId,
+      sourceHotspot: hotspot,
+      hotspotGroupId: hotspot.HotspotGroupId,
+      hotspotIndex: newIndex,
+      name: hotspot.Name,
+      position: normalizedPos,
+    };
+
+    setDuplicatedHotspots((prev) => [...prev, dup]);
+
+    setViewConfig((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev };
+      updated.Layout3D = {
+        ...updated.Layout3D,
+        HotspotGroup: updated.Layout3D.HotspotGroup.map((group: any) => {
+          if (group.Id !== hotspot.HotspotGroupId) return group;
+          return {
+            ...group,
+            Hotspots: [
+              ...group.Hotspots,
+              {
+                Id: tempId,
+                HotspotIndex: newIndex,
+                IsVisible: true,
+                IsExplorable: true,
+                Name: hotspot.Name,
+                MediaUrl: hotspot.MediaUrl || '',
+                MediaVersion: hotspot.MediaVersion || 1,
+                MediaThumbnailUrl: hotspot.MediaThumbnailUrl || '',
+                MediaThumbnailVersion: hotspot.MediaThumbnailVersion || 1,
+                PositionJson: JSON.stringify(normalizedPos),
+                OffsetRotationJson: hotspot.OffsetRotationJson || '',
+                DefaultCameraRotationJson: hotspot.DefaultCameraRotationJson || '',
+                CameraSettingsJson: hotspot.CameraSettingsJson || { version: 1, default: { fov: 90 } },
+                HotspotGroupId: hotspot.HotspotGroupId,
+              },
+            ],
+          };
+        }),
+      };
+      return updated;
+    });
+
+    setSelectedHotspotId(tempId);
+  }, [viewConfig, duplicatedHotspots]);
 
   const handleSaveClick = () => {
     const changes = getChanges();
@@ -318,42 +477,99 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
 
     setIsSaving(true);
     try {
-      const response = await fetch('/api/viewconfig/hotspots', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          updates: changes.map((c) => ({
-            id: c.hotspotId,
-            ...(c.newPosition && {
-              positionJson: JSON.stringify({ x: +c.newPosition.x.toFixed(4), y: +c.newPosition.y.toFixed(4), z: +c.newPosition.z.toFixed(4) }),
-            }),
-            ...(c.newName !== undefined && { name: c.newName }),
-          })),
-        }),
-      });
+      const updateChanges = changes.filter((c) => !c.isDuplicate && !c.isDelete);
+      const insertChanges = changes.filter((c) => c.isDuplicate && c.duplicateData);
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to update hotspots');
+      if (updateChanges.length > 0) {
+        const response = await fetch('/api/viewconfig/hotspots', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            updates: updateChanges.map((c) => ({
+              id: c.hotspotId,
+              ...(c.newPosition && {
+                positionJson: JSON.stringify({ x: +c.newPosition.x.toFixed(4), y: +c.newPosition.y.toFixed(4), z: +c.newPosition.z.toFixed(4) }),
+              }),
+              ...(c.newName !== undefined && { name: c.newName }),
+            })),
+          }),
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || 'Failed to update hotspots');
+        }
+      }
+
+      const deleteChanges = changes.filter((c) => c.isDelete);
+      if (deleteChanges.length > 0) {
+        const realDeletes = deleteChanges.filter((c) => !c.hotspotId.startsWith('temp-'));
+        if (realDeletes.length > 0) {
+          const response = await fetch('/api/viewconfig/hotspots', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: realDeletes.map((c) => c.hotspotId) }),
+          });
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Failed to delete hotspots');
+          }
+        }
+      }
+
+      if (insertChanges.length > 0) {
+        const response = await fetch('/api/viewconfig/hotspots', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hotspots: insertChanges.map((c) => {
+              const d = c.duplicateData!;
+              const pos = c.newPosition
+                ? { x: +c.newPosition.x.toFixed(4), y: +c.newPosition.y.toFixed(4), z: +c.newPosition.z.toFixed(4) }
+                : d.position;
+              return {
+                hotspotIndex: d.hotspotIndex,
+                isVisible: true,
+                isExplorable: true,
+                name: c.newName ?? d.name,
+                mediaUrl: d.sourceHotspot.MediaUrl || '',
+                mediaVersion: d.sourceHotspot.MediaVersion || 1,
+                mediaThumbnailUrl: d.sourceHotspot.MediaThumbnailUrl || '',
+                mediaThumbnailVersion: d.sourceHotspot.MediaThumbnailVersion || 1,
+                positionJson: JSON.stringify(pos),
+                offsetRotationJson: d.sourceHotspot.OffsetRotationJson || '',
+                defaultCameraRotationJson: d.sourceHotspot.DefaultCameraRotationJson || '',
+                cameraSettingsJson: d.sourceHotspot.CameraSettingsJson || { version: 1, default: { fov: 90 } },
+                hotspotGroupId: d.hotspotGroupId,
+              };
+            }),
+          }),
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || 'Failed to create hotspots');
+        }
       }
 
       setViewConfig((prev) => {
         if (!prev) return prev;
+        const delIds = new Set(deletedHotspotIds);
         const updated = { ...prev };
         updated.Layout3D = {
           ...updated.Layout3D,
           HotspotGroup: updated.Layout3D.HotspotGroup.map((group: any) => ({
             ...group,
-            Hotspots: group.Hotspots.map((hotspot: any) => {
-              const posOverride = positionOverrides[hotspot.Id];
-              const nameOverride = nameOverrides[hotspot.Id];
-              if (!posOverride && nameOverride === undefined) return hotspot;
-              return {
-                ...hotspot,
-                ...(posOverride && { PositionJson: JSON.stringify({ x: posOverride.x, y: posOverride.y, z: posOverride.z }) }),
-                ...(nameOverride !== undefined && { Name: nameOverride }),
-              };
-            }),
+            Hotspots: group.Hotspots
+              .filter((hotspot: any) => !delIds.has(hotspot.Id))
+              .map((hotspot: any) => {
+                const posOverride = positionOverrides[hotspot.Id];
+                const nameOverride = nameOverrides[hotspot.Id];
+                if (!posOverride && nameOverride === undefined) return hotspot;
+                return {
+                  ...hotspot,
+                  ...(posOverride && { PositionJson: JSON.stringify({ x: posOverride.x, y: posOverride.y, z: posOverride.z }) }),
+                  ...(nameOverride !== undefined && { Name: nameOverride }),
+                };
+              }),
           })),
         };
         return updated;
@@ -361,6 +577,8 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
 
       setPositionOverrides({});
       setNameOverrides({});
+      setDuplicatedHotspots([]);
+      setDeletedHotspotIds(new Set());
       setShowConfirmModal(false);
       setIsEditMode(false);
       setSelectedHotspotId(null);
@@ -372,13 +590,30 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
   };
 
   const handleCancelEdit = () => {
+    if (duplicatedHotspots.length > 0) {
+      setViewConfig((prev) => {
+        if (!prev) return prev;
+        const dupIds = new Set(duplicatedHotspots.map((d) => d.id));
+        const updated = { ...prev };
+        updated.Layout3D = {
+          ...updated.Layout3D,
+          HotspotGroup: updated.Layout3D.HotspotGroup.map((group: any) => ({
+            ...group,
+            Hotspots: group.Hotspots.filter((h: any) => !dupIds.has(h.Id)),
+          })),
+        };
+        return updated;
+      });
+    }
     setPositionOverrides({});
     setNameOverrides({});
+    setDuplicatedHotspots([]);
+    setDeletedHotspotIds(new Set());
     setIsEditMode(false);
     setSelectedHotspotId(null);
   };
 
-  const changedCount = new Set([...Object.keys(positionOverrides), ...Object.keys(nameOverrides)]).size;
+  const changedCount = new Set([...Object.keys(positionOverrides), ...Object.keys(nameOverrides), ...duplicatedHotspots.map((d) => d.id), ...Array.from(deletedHotspotIds)]).size;
 
   const navigations: NavigationData[] = viewConfig?.Navigations || [];
   const navigationOptions = navigations
@@ -441,14 +676,6 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {viewConfig.Layout3D && (
-            <Link
-              href={`/viewconfig/${viewConfig.Id}`}
-              className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded text-xs font-medium hover:bg-blue-600/30 transition-colors"
-            >
-              View Layout 2D
-            </Link>
-          )}
 
           {isEditMode ? (
             <>
@@ -549,6 +776,7 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
           positionOverrides={positionOverrides}
           onHotspotClick={handleHotspotClick}
           onHotspotDrag={handleHotspotDrag}
+          hiddenHotspotIds={deletedHotspotIds}
         />
 
         {isEditMode && (
@@ -563,7 +791,23 @@ export default function Layout3DPage({ params }: { params: { id: string } }) {
               const currentName = nameOverrides[selectedHotspotId] ?? h.Name ?? '';
               return (
                 <div className="mt-2 border-t border-gray-600 pt-2">
-                  <p className="text-blue-400 font-medium mb-2">Selected: {h.Name || 'Unknown'}</p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-blue-400 font-medium">Selected: {h.Name || 'Unknown'}</p>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => handleDuplicate(h)}
+                        className="px-2 py-1 bg-purple-600/30 text-purple-300 rounded text-[11px] font-medium hover:bg-purple-600/50 transition-colors flex items-center gap-1"
+                      >
+                        <Copy size={10} /> Duplicate
+                      </button>
+                      <button
+                        onClick={() => handleDelete(selectedHotspotId)}
+                        className="px-2 py-1 bg-red-600/30 text-red-300 rounded text-[11px] font-medium hover:bg-red-600/50 transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 size={10} /> Delete
+                      </button>
+                    </div>
+                  </div>
                   <label className="text-gray-400 block mb-1">Navigation Target (Name)</label>
                   <select
                     value={currentName}
