@@ -328,8 +328,20 @@ function ConfirmationModal({
           </table>
 
           <div className="mt-6">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">SQL Queries</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-700">SQL Queries</h3>
+              <button
+                onClick={() => {
+                  const transactionSql = `BEGIN;\n\n${changes.map((change) => `UPDATE "Markers"\n  SET "PositionTop" = ${change.newTop.toFixed(6)}::float8,\n      "PositionLeft" = ${change.newLeft.toFixed(6)}::float8\n  WHERE "Id" = '${change.markerId}'::uuid;`).join('\n\n')}\n\nCOMMIT;`;
+                  navigator.clipboard.writeText(transactionSql);
+                }}
+                className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              >
+                Copy All
+              </button>
+            </div>
             <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto">
+              <div className="text-gray-500 mb-2">-- BEGIN TRANSACTION</div>
               {changes.map((change) => (
                 <div key={change.markerId} className="mb-2">
                   UPDATE &quot;Markers&quot;<br />
@@ -338,6 +350,7 @@ function ConfirmationModal({
                   &nbsp;&nbsp;WHERE &quot;Id&quot; = &apos;{change.markerId}&apos;::uuid;
                 </div>
               ))}
+              <div className="text-gray-500 mt-2">-- COMMIT;</div>
             </div>
           </div>
         </div>
