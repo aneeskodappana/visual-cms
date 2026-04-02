@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ChevronDown, ChevronRight, Search, Copy, Check, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Copy, Check, Trash2, Download } from 'lucide-react';
+import { generateInsertSql, downloadSqlFile } from '@/lib/sqlExportUtils';
 import { constructCdnUrl, constructMarkerIconUrl, getViewTypeName, getMarkerTypeName, getMarkerSubTypeName, ViewTypes } from '@/lib/cdnUtils';
 
 interface ViewConfigResult {
@@ -741,6 +742,16 @@ export function ViewConfigSearchComponent() {
                 <span className="text-sm font-medium text-gray-600">
                   {selectedViewConfigs.size} selected
                 </span>
+                <button
+                  onClick={() => {
+                    const selected = results.filter((r) => selectedViewConfigs.has(r.Id));
+                    const sql = generateInsertSql(selected);
+                    downloadSqlFile(sql);
+                  }}
+                  className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+                >
+                  <Download size={12} /> Export SQL
+                </button>
                 <button
                   onClick={() => setShowDeleteModal(true)}
                   className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center gap-1"
