@@ -10,16 +10,20 @@
   },
   "dependencies": {
     "@prisma/client": "^5.9.1",
+    "@react-three/drei": "^9.105.0",
+    "@react-three/fiber": "^8.16.0",
     "lucide-react": "^0.263.1",
     "next": "14.2.13",
     "react": "^18",
     "react-dom": "^18",
-    "react-zoom-pan-pinch": "^3.6.1"
+    "react-zoom-pan-pinch": "^3.6.1",
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/three": "^0.170.0",
     "eslint": "^8",
     "eslint-config-next": "14.2.13",
     "postcss": "^8",

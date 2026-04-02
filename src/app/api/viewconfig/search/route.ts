@@ -57,7 +57,11 @@ export async function GET(request: NextRequest) {
         include: {
           Layout3D: {
             include: {
-              HotspotGroup: true,
+              HotspotGroup: {
+                include: {
+                  Hotspots: true,
+                },
+              },
             },
           },
           Layout2Ds: {
@@ -108,7 +112,11 @@ export async function GET(request: NextRequest) {
         include: {
           Layout3D: {
             include: {
-              HotspotGroup: true,
+              HotspotGroup: {
+                include: {
+                  Hotspots: true,
+                },
+              },
             },
           },
           Layout2Ds: {
