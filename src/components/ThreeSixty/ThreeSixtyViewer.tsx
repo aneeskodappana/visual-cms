@@ -4,6 +4,7 @@ import { useRef, Suspense, useState, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Scene, WebGLRenderer } from 'three';
 import { ThreeSixtyImageMesh, ThreeSixtyVideoMesh, RetailHotspot, VIDEO_VIEWER_CONSTANTS } from '.';
+import DraggableHotspot from './DraggableHotspot';
 import { OrbitControls } from '@react-three/drei';
 
 interface HotspotData {
@@ -46,6 +47,11 @@ interface Layout3DData {
 interface ThreeSixtyViewerProps {
   layout3D: Layout3DData;
   cdnBaseUrl: string;
+  isEditMode?: boolean;
+  selectedHotspotId?: string | null;
+  positionOverrides?: Record<string, { x: number; y: number; z: number }>;
+  onHotspotClick?: (hotspot: HotspotData) => void;
+  onHotspotDrag?: (hotspotId: string, position: { x: number; y: number; z: number }) => void;
 }
 
 const BLOB_BASE_URL = 'https://worlddev.aldar.com/assets/';
@@ -86,9 +92,18 @@ const parsePosition = (positionJson: string): { x: number; y: number; z: number 
   }
 };
 
-export default function ThreeSixtyViewer({ layout3D, cdnBaseUrl }: ThreeSixtyViewerProps) {
+export default function ThreeSixtyViewer({
+  layout3D,
+  cdnBaseUrl,
+  isEditMode = false,
+  selectedHotspotId,
+  positionOverrides = {},
+  onHotspotClick,
+  onHotspotDrag,
+}: ThreeSixtyViewerProps) {
   const aspectRatioRef = useRef(0);
   const [cursorStyle, setCursorStyle] = useState(VIDEO_VIEWER_CONSTANTS.CURSOR_STYLE);
+  const [isDraggingHotspot, setIsDraggingHotspot] = useState(false);
 
   const defaultGroup = useMemo(() => {
     return layout3D.HotspotGroup.find(
@@ -136,7 +151,11 @@ export default function ThreeSixtyViewer({ layout3D, cdnBaseUrl }: ThreeSixtyVie
   const fov = 75;
 
   const handleHotSpotClick = (hotspot: HotspotData) => {
-    setCurrentHotspot(hotspot);
+    if (isEditMode) {
+      onHotspotClick?.(hotspot);
+    } else {
+      setCurrentHotspot(hotspot);
+    }
   };
 
   if (!mediaUrl) {
@@ -160,15 +179,34 @@ export default function ThreeSixtyViewer({ layout3D, cdnBaseUrl }: ThreeSixtyVie
         onCreated={onCanvasCreated}
       >
         <OrbitControls
+          enabled={!isDraggingHotspot}
           enableZoom={false}
           enablePan={false}
           rotateSpeed={-0.5}
           target={[0, 0, 0]}
         />
 
-        {relatedHotspots.map((hotspot) => {
-          const pos = parsePosition(hotspot.PositionJson);
+        {(isEditMode ? (defaultGroup?.Hotspots ?? []) : relatedHotspots).map((hotspot) => {
+          const override = positionOverrides[hotspot.Id];
+          const pos = override || parsePosition(hotspot.PositionJson);
           const spherePos = convertToSpherePosition(pos.x, pos.y, pos.z);
+
+          if (isEditMode) {
+            return (
+              <DraggableHotspot
+                key={hotspot.Id}
+                title={hotspot.Name}
+                position={spherePos}
+                isSelected={hotspot.Id === selectedHotspotId}
+                isDraggable={true}
+                onClick={() => handleHotSpotClick(hotspot)}
+                onDragStart={() => setIsDraggingHotspot(true)}
+                onDragEnd={() => setIsDraggingHotspot(false)}
+                onDrag={(position) => onHotspotDrag?.(hotspot.Id, position)}
+              />
+            );
+          }
+
           return (
             <RetailHotspot
               key={hotspot.Id}
