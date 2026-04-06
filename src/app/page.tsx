@@ -1,17 +1,34 @@
+'use client';
+
+import { useState, useCallback } from 'react';
 import { DatabaseTestComponent } from "@/components/DatabaseTestComponent";
+import { DatabaseSelectorModal } from "@/components/DatabaseSelectorModal";
+import { Database } from 'lucide-react';
 
 export default function Home() {
+  const [dbModalOpen, setDbModalOpen] = useState(false);
+  const [dbRefreshKey, setDbRefreshKey] = useState(0);
+
+  const handleDbSwitch = useCallback(() => {
+    setDbRefreshKey((k) => k + 1);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">WOACMS</h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-4xl font-bold text-slate-900">WOACMS</h1>
+          <button
+            onClick={() => setDbModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition-colors text-sm font-medium"
+          >
+            <Database size={16} /> Switch Database
+          </button>
         </div>
 
         {/* Main Content */}
         <main className="space-y-8">
-          {/* Database Test Section */}
           {/* Quick Links */}
           <section className="p-6 bg-white border border-slate-200 rounded-lg shadow-sm">
             <div className="flex flex-wrap gap-3">
@@ -43,10 +60,16 @@ export default function Home() {
           </section>
           <section>
             <h2 className="text-2xl font-semibold text-slate-900 mb-4">Database Status</h2>
-            <DatabaseTestComponent />
+            <DatabaseTestComponent key={dbRefreshKey} />
           </section>
         </main>
       </div>
+
+      <DatabaseSelectorModal
+        isOpen={dbModalOpen}
+        onClose={() => setDbModalOpen(false)}
+        onSwitch={handleDbSwitch}
+      />
     </div>
   );
 }
