@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Save, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { TransformWrapper, TransformComponent, useTransformEffect } from 'react-zoom-pan-pinch';
 import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName } from '@/lib/cdnUtils';
@@ -19,6 +19,7 @@ interface Marker {
   Id: string;
   Kind: number;
   SubType: number;
+  MarkerIndex?: number;
   Code: string;
   Title: string;
   PositionTop: number;
@@ -52,15 +53,26 @@ function MarkerOverlay({
   isEditMode,
   positionOverrides,
   onMarkerDrag,
+  onReplicate,
+  onEditMarker,
+  onDeleteMarker,
+  tempMarkerIds,
+  markerEdits,
 }: {
   layout2d: Layout2D;
   onSelectMarker: (marker: Marker) => void;
   isEditMode: boolean;
   positionOverrides: Record<string, { top: number; left: number }>;
   onMarkerDrag: (markerId: string, newTop: number, newLeft: number) => void;
+  onReplicate?: (marker: Marker) => void;
+  onEditMarker?: (marker: Marker) => void;
+  onDeleteMarker?: (marker: Marker) => void;
+  tempMarkerIds?: Set<string>;
+  markerEdits?: Record<string, { title?: string; iconUrl?: string }>;
 }) {
   const [scale, setScale] = useState(1);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useTransformEffect(({ state }) => {
@@ -113,6 +125,10 @@ function MarkerOverlay({
         const top = override ? override.top : marker.PositionTop;
         const left = override ? override.left : marker.PositionLeft;
         const hasChanged = override !== undefined;
+        const isTemp = tempMarkerIds?.has(marker.Id) ?? false;
+        const hasEdits = markerEdits?.[marker.Id] !== undefined;
+        const displayTitle = markerEdits?.[marker.Id]?.title ?? marker.Title;
+        const displayIconUrl = markerEdits?.[marker.Id]?.iconUrl ?? marker.IconUrl;
 
         return (
           <div
@@ -127,29 +143,37 @@ function MarkerOverlay({
               pointerEvents: 'auto',
             }}
             onPointerDown={(e) => isEditMode ? handlePointerDown(e, marker.Id) : undefined}
-            onClick={() => {
+            onClick={(e) => {
               if (!isEditMode) {
                 const query = `SELECT * FROM "Markers" WHERE "Id" = '${marker.Id}'::uuid;`;
                 navigator.clipboard.writeText(query);
               } else {
+                e.stopPropagation();
+                setActivePopupId(activePopupId === marker.Id ? null : marker.Id);
                 onSelectMarker(marker);
               }
             }}
-            title={marker.Title || marker.Code}
+            title={displayTitle || marker.Code}
           >
-            {isEditMode && hasChanged && (
+            {isEditMode && isTemp && (
+              <div className="absolute -top-1 -right-1 flex gap-0.5 z-10">
+                <div className="w-2.5 h-2.5 bg-green-500 rounded-full border border-white" />
+                <div className="w-2.5 h-2.5 bg-green-500 rounded-full border border-white" />
+              </div>
+            )}
+            {isEditMode && !isTemp && (hasChanged || hasEdits) && (
               <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border border-white z-10" />
             )}
-            {marker.IconUrl ? (
+            {(displayIconUrl) ? (
               <img
-                src={`https://worlddev.aldar.com/assets/${marker.IconUrl}`}
-                alt={marker.Title || 'marker'}
-                className={`drop-shadow-lg ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-1 rounded' : 'hover:saturate-150'} transition-all`}
+                src={`https://worlddev.aldar.com/assets/${displayIconUrl}`}
+                alt={displayTitle || 'marker'}
+                className={`drop-shadow-lg ${isTemp ? 'ring-2 ring-green-400 ring-offset-1 rounded' : isEditMode ? 'ring-2 ring-blue-400 ring-offset-1 rounded' : 'hover:saturate-150'} transition-all`}
                 style={{ width: '40px', height: '40px', flexShrink: 0 }}
                 draggable={false}
               />
             ) : (
-              <div className={`w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg flex items-center justify-center flex-shrink-0 ${isEditMode ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+              <div className={`w-6 h-6 rounded-full ${isTemp ? 'bg-green-500' : 'bg-blue-500'} border-2 border-white shadow-lg flex items-center justify-center flex-shrink-0 ${isTemp ? 'ring-2 ring-green-400 ring-offset-1' : isEditMode ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
                 <div className="w-2 h-2 bg-white rounded-full"></div>
               </div>
             )}
@@ -165,14 +189,41 @@ function MarkerOverlay({
               </div>
             )}
 
-            {isEditMode && (
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 bg-blue-900 text-white px-2 py-1 rounded text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap">
-                {marker.Title || marker.Code} ({top.toFixed(1)}, {left.toFixed(1)})
+            {isEditMode && activePopupId !== marker.Id && (
+              <div className={`absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 ${isTemp ? 'bg-green-700' : 'bg-blue-900'} text-white px-2 py-1 rounded text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap`}>
+                {displayTitle || marker.Code} ({top.toFixed(1)}, {left.toFixed(1)}){isTemp ? ' (new)' : ''}
+              </div>
+            )}
+
+            {isEditMode && activePopupId === marker.Id && (
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 z-[200] flex flex-col items-center">
+                <div className="w-0 h-0 border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-gray-800"></div>
+                <div className="bg-gray-800 rounded-lg shadow-xl p-1.5 flex gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onReplicate?.(marker); setActivePopupId(null); }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 text-white rounded text-[11px] font-medium hover:bg-purple-700 transition-colors whitespace-nowrap"
+                  >
+                    <Copy size={10} /> Replicate
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEditMarker?.(marker); setActivePopupId(null); }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-600 text-white rounded text-[11px] font-medium hover:bg-blue-700 transition-colors whitespace-nowrap"
+                  >
+                    <Pencil size={10} /> Edit
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDeleteMarker?.(marker); setActivePopupId(null); }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-red-600 text-white rounded text-[11px] font-medium hover:bg-red-700 transition-colors whitespace-nowrap"
+                  >
+                    <Trash2 size={10} /> Delete
+                  </button>
+                </div>
               </div>
             )}
           </div>
         );
       })}
+
     </div>
   );
 }
@@ -274,83 +325,290 @@ function TitleConfirmationModal({
   );
 }
 
+function MarkerEditModal({
+  marker,
+  sourceMarker,
+  layout2dId,
+  onConfirm,
+  onCancel,
+  isSaving,
+  isNew,
+  allIconUrls,
+}: {
+  marker: Marker;
+  sourceMarker?: Marker;
+  layout2dId?: string;
+  onConfirm: (title: string, iconUrl: string) => void;
+  onCancel: () => void;
+  isSaving: boolean;
+  isNew?: boolean;
+  allIconUrls?: string[];
+}) {
+  const [title, setTitle] = useState(marker.Title || '');
+  const [iconUrl, setIconUrl] = useState(marker.IconUrl || '');
+
+  const hasChanges = isNew || title !== (marker.Title || '') || iconUrl !== (marker.IconUrl || '');
+
+  let sql = '';
+  if (isNew && sourceMarker && layout2dId) {
+    const titleExpr = title ? `'${title.replace(/'/g, "''")}'` : `''`;
+    const iconExpr = iconUrl ? `'${iconUrl.replace(/'/g, "''")}'` : 'NULL';
+    sql = `INSERT INTO "Markers" (
+  "Kind", "SubType", "MarkerIndex", "Code", "IsVisible", "IsExplorable",
+  "NavigateTo", "IsShallowLink", "PositionTop", "PositionLeft", "KeepScale",
+  "Title", "TitleVisible", "IconUrl", "Layout2DId"
+) SELECT
+  "Kind", "SubType",
+  (SELECT COALESCE(MAX("MarkerIndex"), -1) + 1
+   FROM "Markers" WHERE "Layout2DId" = '${layout2dId}'::uuid),
+  "Code", "IsVisible", "IsExplorable", "NavigateTo", "IsShallowLink",
+  "PositionTop" + 20, "PositionLeft" + 20, "KeepScale",
+  ${titleExpr}, "TitleVisible", ${iconExpr}, "Layout2DId"
+FROM "Markers"
+WHERE "Id" = '${sourceMarker.Id}'::uuid;`;
+  } else {
+    const sqlParts: string[] = [];
+    if (title !== (marker.Title || '')) sqlParts.push(`"Title" = '${title.replace(/'/g, "''")}'`);
+    if (iconUrl !== (marker.IconUrl || '')) {
+      sqlParts.push(iconUrl ? `"IconUrl" = '${iconUrl.replace(/'/g, "''")}'` : `"IconUrl" = NULL`);
+    }
+    if (sqlParts.length > 0) {
+      sql = `UPDATE "Markers"\n  SET ${sqlParts.join(',\n      ')}\n  WHERE "Id" = '${marker.Id}'::uuid;`;
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full flex flex-col">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-900">{isNew ? 'Create Replicated Marker' : 'Edit Marker'}</h2>
+          <p className="text-sm text-gray-500 mt-1">{marker.Code}{!isNew && <> &middot; {marker.Id}</>}</p>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Marker title"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Icon</label>
+            {iconUrl && (
+              <div className="mb-3 flex items-center gap-3">
+                <div className="bg-gray-800 rounded-lg p-3 flex items-center justify-center">
+                  <img
+                    src={`https://worlddev.aldar.com/assets/${iconUrl}`}
+                    alt="current icon"
+                    className="w-12 h-12"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-700">Current</p>
+                  <p className="text-[10px] text-gray-400 font-mono break-all">{iconUrl}</p>
+                </div>
+              </div>
+            )}
+            {allIconUrls && allIconUrls.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-2">Select from existing icons:</p>
+                <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto p-1">
+                  {allIconUrls.map((url) => (
+                    <button
+                      key={url}
+                      type="button"
+                      onClick={() => setIconUrl(url)}
+                      className={`bg-gray-800 rounded-lg p-2 flex items-center justify-center transition-all hover:ring-2 hover:ring-blue-400 ${
+                        iconUrl === url ? 'ring-2 ring-blue-500 ring-offset-1' : ''
+                      }`}
+                      title={url}
+                    >
+                      <img
+                        src={`https://worlddev.aldar.com/assets/${url}`}
+                        alt={url}
+                        className="w-8 h-8"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="mt-2">
+              <input
+                type="text"
+                value={iconUrl}
+                onChange={(e) => setIconUrl(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono"
+                placeholder="Or type a path, e.g. icons/marker.png"
+              />
+            </div>
+          </div>
+
+          {hasChanges && sql && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-semibold text-gray-700">SQL Preview</h3>
+                <button
+                  onClick={() => navigator.clipboard.writeText(sql)}
+                  className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                >
+                  Copy SQL
+                </button>
+              </div>
+              <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+                {sql}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            disabled={isSaving}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(title, iconUrl)}
+            disabled={isSaving || !hasChanges}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm disabled:opacity-50"
+          >
+            {isSaving ? (isNew ? 'Creating...' : 'Saving...') : (isNew ? 'Confirm & Create' : 'Confirm & Save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmationModal({
-  changes,
+  positionChanges,
+  newMarkers,
+  editChanges,
   onConfirm,
   onCancel,
   isSaving,
 }: {
-  changes: PositionChange[];
+  positionChanges: PositionChange[];
+  newMarkers: { marker: Marker; sourceId: string; position: { top: number; left: number }; edits?: { title?: string; iconUrl?: string } }[];
+  editChanges: { markerId: string; marker: Marker; edits: { title?: string; iconUrl?: string } }[];
   onConfirm: () => void;
   onCancel: () => void;
   isSaving: boolean;
 }) {
+  const totalChanges = positionChanges.length + newMarkers.length + editChanges.length;
+
+  const buildFullSql = () => {
+    const parts: string[] = [];
+    newMarkers.forEach((nm) => {
+      const title = nm.edits?.title ?? nm.marker.Title;
+      const iconUrl = nm.edits?.iconUrl ?? nm.marker.IconUrl;
+      const titleExpr = title ? `'${title.replace(/'/g, "''")}'` : `''`;
+      const iconExpr = iconUrl ? `'${iconUrl.replace(/'/g, "''")}'` : 'NULL';
+      parts.push(`INSERT INTO "Markers" (\n  "Kind","SubType","MarkerIndex","Code","IsVisible","IsExplorable",\n  "NavigateTo","IsShallowLink","PositionTop","PositionLeft","KeepScale",\n  "Title","TitleVisible","IconUrl","Layout2DId"\n) SELECT\n  "Kind","SubType",\n  (SELECT COALESCE(MAX("MarkerIndex"),-1)+1 FROM "Markers" WHERE "Layout2DId"="Layout2DId"),\n  "Code","IsVisible","IsExplorable","NavigateTo","IsShallowLink",\n  ${nm.position.top.toFixed(6)}::float8, ${nm.position.left.toFixed(6)}::float8, "KeepScale",\n  ${titleExpr}, "TitleVisible", ${iconExpr}, "Layout2DId"\nFROM "Markers"\nWHERE "Id" = '${nm.sourceId}'::uuid;`);
+    });
+    positionChanges.forEach((c) => {
+      parts.push(`UPDATE "Markers"\n  SET "PositionTop" = ${c.newTop.toFixed(6)}::float8,\n      "PositionLeft" = ${c.newLeft.toFixed(6)}::float8\n  WHERE "Id" = '${c.markerId}'::uuid;`);
+    });
+    editChanges.forEach((ec) => {
+      const setParts: string[] = [];
+      if (ec.edits.title !== undefined) setParts.push(`"Title" = '${ec.edits.title.replace(/'/g, "''")}'`);
+      if (ec.edits.iconUrl !== undefined) setParts.push(ec.edits.iconUrl ? `"IconUrl" = '${ec.edits.iconUrl.replace(/'/g, "''")}'` : `"IconUrl" = NULL`);
+      if (setParts.length > 0) parts.push(`UPDATE "Markers"\n  SET ${setParts.join(', ')}\n  WHERE "Id" = '${ec.markerId}'::uuid;`);
+    });
+    return `BEGIN;\n\n${parts.join('\n\n')}\n\nCOMMIT;`;
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] flex flex-col">
         <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">Confirm Position Changes</h2>
-          <p className="text-sm text-gray-500 mt-1">{changes.length} marker(s) modified</p>
+          <h2 className="text-xl font-bold text-gray-900">Confirm Changes</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            {totalChanges} change(s)
+            {newMarkers.length > 0 && <span className="ml-1 text-green-600">· {newMarkers.length} new</span>}
+            {positionChanges.length > 0 && <span className="ml-1 text-blue-600">· {positionChanges.length} moved</span>}
+            {editChanges.length > 0 && <span className="ml-1 text-orange-600">· {editChanges.length} edited</span>}
+          </p>
         </div>
 
-        <div className="overflow-auto flex-1 p-6">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b">
-                <th className="pb-2 font-medium">Marker</th>
-                <th className="pb-2 font-medium">Old Position</th>
-                <th className="pb-2 font-medium">New Position</th>
-                <th className="pb-2 font-medium">Delta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {changes.map((change) => (
-                <tr key={change.markerId} className="border-b border-gray-100">
-                  <td className="py-3">
-                    <div className="font-medium text-gray-900">{change.markerTitle || change.markerCode}</div>
-                    <div className="text-[11px] text-gray-400 font-mono">{change.markerId}</div>
-                  </td>
-                  <td className="py-3 font-mono text-red-600 text-xs">
-                    Top: {change.oldTop.toFixed(2)}<br />
-                    Left: {change.oldLeft.toFixed(2)}
-                  </td>
-                  <td className="py-3 font-mono text-green-600 text-xs">
-                    Top: {change.newTop.toFixed(2)}<br />
-                    Left: {change.newLeft.toFixed(2)}
-                  </td>
-                  <td className="py-3 font-mono text-gray-500 text-xs">
-                    Δ Top: {(change.newTop - change.oldTop).toFixed(2)}<br />
-                    Δ Left: {(change.newLeft - change.oldLeft).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="overflow-auto flex-1 p-6 space-y-6">
+          {newMarkers.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-green-700 mb-2">New Markers (INSERT)</h3>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2 font-medium">Marker</th><th className="pb-2 font-medium">Title</th><th className="pb-2 font-medium">Position</th></tr></thead>
+                <tbody>
+                  {newMarkers.map((nm) => (
+                    <tr key={nm.marker.Id} className="border-b border-gray-100">
+                      <td className="py-2"><span className="font-medium text-gray-900">{nm.marker.Code}</span></td>
+                      <td className="py-2 text-xs text-green-600 font-mono">{(nm.edits?.title ?? nm.marker.Title) || '(empty)'}</td>
+                      <td className="py-2 text-xs font-mono text-gray-600">{nm.position.top.toFixed(1)}, {nm.position.left.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          <div className="mt-6">
+          {positionChanges.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-blue-700 mb-2">Position Changes (UPDATE)</h3>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2 font-medium">Marker</th><th className="pb-2 font-medium">Old</th><th className="pb-2 font-medium">New</th><th className="pb-2 font-medium">Delta</th></tr></thead>
+                <tbody>
+                  {positionChanges.map((c) => (
+                    <tr key={c.markerId} className="border-b border-gray-100">
+                      <td className="py-2"><div className="font-medium text-gray-900">{c.markerTitle || c.markerCode}</div><div className="text-[10px] text-gray-400 font-mono">{c.markerId}</div></td>
+                      <td className="py-2 font-mono text-red-600 text-xs">{c.oldTop.toFixed(1)}, {c.oldLeft.toFixed(1)}</td>
+                      <td className="py-2 font-mono text-green-600 text-xs">{c.newTop.toFixed(1)}, {c.newLeft.toFixed(1)}</td>
+                      <td className="py-2 font-mono text-gray-500 text-xs">Δ {(c.newTop - c.oldTop).toFixed(1)}, {(c.newLeft - c.oldLeft).toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {editChanges.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-orange-700 mb-2">Property Edits (UPDATE)</h3>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-gray-500 border-b"><th className="pb-2 font-medium">Marker</th><th className="pb-2 font-medium">Field</th><th className="pb-2 font-medium">Old</th><th className="pb-2 font-medium">New</th></tr></thead>
+                <tbody>
+                  {editChanges.map((ec) => (
+                    <tr key={ec.markerId} className="border-b border-gray-100">
+                      <td className="py-2"><div className="font-medium text-gray-900">{ec.marker.Title || ec.marker.Code}</div><div className="text-[10px] text-gray-400 font-mono">{ec.markerId}</div></td>
+                      <td className="py-2 text-xs text-gray-600">{ec.edits.title !== undefined ? 'Title' : ''}{ec.edits.title !== undefined && ec.edits.iconUrl !== undefined ? ', ' : ''}{ec.edits.iconUrl !== undefined ? 'IconUrl' : ''}</td>
+                      <td className="py-2 text-xs font-mono text-red-600">{ec.edits.title !== undefined ? (ec.marker.Title || '(empty)') : ''}{ec.edits.iconUrl !== undefined ? <><br />{ec.marker.IconUrl || '(none)'}</> : ''}</td>
+                      <td className="py-2 text-xs font-mono text-green-600">{ec.edits.title !== undefined ? (ec.edits.title || '(empty)') : ''}{ec.edits.iconUrl !== undefined ? <><br />{ec.edits.iconUrl || '(none)'}</> : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-700">SQL Queries</h3>
               <button
-                onClick={() => {
-                  const transactionSql = `BEGIN;\n\n${changes.map((change) => `UPDATE "Markers"\n  SET "PositionTop" = ${change.newTop.toFixed(6)}::float8,\n      "PositionLeft" = ${change.newLeft.toFixed(6)}::float8\n  WHERE "Id" = '${change.markerId}'::uuid;`).join('\n\n')}\n\nCOMMIT;`;
-                  navigator.clipboard.writeText(transactionSql);
-                }}
+                onClick={() => navigator.clipboard.writeText(buildFullSql())}
                 className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
               >
                 Copy All
               </button>
             </div>
-            <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto">
-              <div className="text-gray-500 mb-2">-- BEGIN TRANSACTION</div>
-              {changes.map((change) => (
-                <div key={change.markerId} className="mb-2">
-                  UPDATE &quot;Markers&quot;<br />
-                  &nbsp;&nbsp;SET &quot;PositionTop&quot; = {change.newTop.toFixed(6)}::float8,<br />
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&quot;PositionLeft&quot; = {change.newLeft.toFixed(6)}::float8<br />
-                  &nbsp;&nbsp;WHERE &quot;Id&quot; = &apos;{change.markerId}&apos;::uuid;
-                </div>
-              ))}
-              <div className="text-gray-500 mt-2">-- COMMIT;</div>
+            <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+              {buildFullSql()}
             </div>
           </div>
         </div>
@@ -394,6 +652,13 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [editingSubtitle, setEditingSubtitle] = useState('');
   const [showTitleConfirmModal, setShowTitleConfirmModal] = useState(false);
   const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [editingMarker, setEditingMarker] = useState<Marker | null>(null);
+  const [isSavingMarker, setIsSavingMarker] = useState(false);
+  const [tempMarkerIds, setTempMarkerIds] = useState<Set<string>>(new Set());
+  const [replicateSources, setReplicateSources] = useState<Record<string, string>>({});
+  const [markerEdits, setMarkerEdits] = useState<Record<string, { title?: string; iconUrl?: string }>>({});
+  const [deletingMarker, setDeletingMarker] = useState<Marker | null>(null);
+  const [isDeletingMarker, setIsDeletingMarker] = useState(false);
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -455,54 +720,80 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
       .filter(Boolean) as PositionChange[];
   }, [viewConfig, currentLayout2DIndex, positionOverrides]);
 
+  const hasPendingChanges = Object.keys(positionOverrides).length > 0
+    || tempMarkerIds.size > 0
+    || Object.keys(markerEdits).length > 0;
+
   const handleSaveClick = () => {
-    const changes = getChanges();
-    if (changes.length === 0) return;
+    if (!hasPendingChanges) return;
     setShowConfirmModal(true);
   };
 
   const handleConfirmSave = async () => {
-    const changes = getChanges();
-    if (changes.length === 0) return;
+    if (!viewConfig || !hasPendingChanges) return;
+    const layout = viewConfig.Layout2Ds?.[currentLayout2DIndex];
+    if (!layout) return;
 
     setIsSaving(true);
     try {
-      const response = await fetch('/api/viewconfig/markers', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          updates: changes.map((c) => ({
-            id: c.markerId,
-            positionTop: c.newTop,
-            positionLeft: c.newLeft,
-          })),
-        }),
-      });
+      // 1. POST new (replicated) markers
+      for (const tempId of Array.from(tempMarkerIds)) {
+        const sourceId = replicateSources[tempId];
+        const marker = layout.Markers.find((m) => m.Id === tempId);
+        if (!sourceId || !marker) continue;
+        const override = positionOverrides[tempId];
+        const edits = markerEdits[tempId];
+        const top = override ? override.top : marker.PositionTop;
+        const left = override ? override.left : marker.PositionLeft;
+        const title = edits?.title ?? marker.Title;
+        const iconUrl = edits?.iconUrl ?? marker.IconUrl;
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to update markers');
+        await fetch('/api/viewconfig/markers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourceMarkerId: sourceId,
+            offsetTop: top - (layout.Markers.find((m) => m.Id === sourceId)?.PositionTop ?? 0),
+            offsetLeft: left - (layout.Markers.find((m) => m.Id === sourceId)?.PositionLeft ?? 0),
+            title,
+            iconUrl: iconUrl || undefined,
+          }),
+        });
       }
 
-      // Update local state with new positions
-      setViewConfig((prev) => {
-        if (!prev) return prev;
-        const updated = { ...prev };
-        updated.Layout2Ds = updated.Layout2Ds.map((layout, idx) => {
-          if (idx !== currentLayout2DIndex) return layout;
-          return {
-            ...layout,
-            Markers: layout.Markers.map((marker) => {
-              const override = positionOverrides[marker.Id];
-              if (!override) return marker;
-              return { ...marker, PositionTop: override.top, PositionLeft: override.left };
-            }),
-          };
+      // 2. PUT position changes for existing markers
+      const posUpdates = Object.entries(positionOverrides)
+        .filter(([id]) => !tempMarkerIds.has(id))
+        .map(([id, pos]) => ({ id, positionTop: pos.top, positionLeft: pos.left }));
+      if (posUpdates.length > 0) {
+        await fetch('/api/viewconfig/markers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updates: posUpdates }),
         });
-        return updated;
-      });
+      }
+
+      // 3. PATCH title/icon edits for existing markers
+      const editEntries = Object.entries(markerEdits).filter(([id]) => !tempMarkerIds.has(id));
+      for (const [id, edits] of editEntries) {
+        await fetch('/api/viewconfig/markers', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, title: edits.title, iconUrl: edits.iconUrl }),
+        });
+      }
+
+      // Refresh data from server
+      const response = await fetch(`/api/viewconfig/search?uuid=${params.id}`);
+      const data = await response.json();
+      if (data.data && data.data.length > 0) {
+        setViewConfig(data.data[0]);
+      }
 
       setPositionOverrides({});
+      setTempMarkerIds(new Set());
+      setReplicateSources({});
+      setMarkerEdits({});
       setShowConfirmModal(false);
       setIsEditMode(false);
     } catch (err) {
@@ -513,8 +804,107 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   };
 
   const handleCancelEdit = () => {
+    // Remove temp markers from local state
+    if (tempMarkerIds.size > 0) {
+      setViewConfig((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          Layout2Ds: prev.Layout2Ds.map((layout, idx) => {
+            if (idx !== currentLayout2DIndex) return layout;
+            return {
+              ...layout,
+              Markers: layout.Markers.filter((m) => !tempMarkerIds.has(m.Id)),
+            };
+          }),
+        };
+      });
+    }
     setPositionOverrides({});
+    setTempMarkerIds(new Set());
+    setReplicateSources({});
+    setMarkerEdits({});
     setIsEditMode(false);
+  };
+
+  const handleReplicateMarker = (sourceMarker: Marker) => {
+    const tempId = `temp-${Date.now()}`;
+    const tempMarker: Marker = {
+      Id: tempId,
+      Kind: sourceMarker.Kind,
+      SubType: sourceMarker.SubType,
+      Code: sourceMarker.Code,
+      Title: sourceMarker.Title ? `${sourceMarker.Title} (copy)` : '',
+      PositionTop: sourceMarker.PositionTop + 20,
+      PositionLeft: sourceMarker.PositionLeft + 20,
+      IconUrl: sourceMarker.IconUrl,
+      HoverIconUrl: sourceMarker.HoverIconUrl,
+    };
+
+    setViewConfig((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        Layout2Ds: prev.Layout2Ds.map((layout, idx) => {
+          if (idx !== currentLayout2DIndex) return layout;
+          return { ...layout, Markers: [...layout.Markers, tempMarker] };
+        }),
+      };
+    });
+
+    setTempMarkerIds((prev) => new Set(prev).add(tempId));
+    setReplicateSources((prev) => ({ ...prev, [tempId]: sourceMarker.Id }));
+    setSelectedMarker(tempMarker);
+  };
+
+  const isNewMarker = editingMarker?.Id.startsWith('temp-') ?? false;
+
+  const handleEditMarkerConfirm = (title: string, iconUrl: string) => {
+    if (!editingMarker) return;
+    setMarkerEdits((prev) => ({
+      ...prev,
+      [editingMarker.Id]: { title, iconUrl: iconUrl || undefined },
+    }));
+    setEditingMarker(null);
+  };
+
+  const handleCancelEditMarker = () => {
+    setEditingMarker(null);
+  };
+
+  const handleConfirmDeleteMarker = async () => {
+    if (!deletingMarker || !viewConfig) return;
+    setIsDeletingMarker(true);
+    try {
+      const response = await fetch(`/api/viewconfig/markers?id=${deletingMarker.Id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete marker');
+      }
+
+      setViewConfig((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          Layout2Ds: prev.Layout2Ds.map((layout, idx) => {
+            if (idx !== currentLayout2DIndex) return layout;
+            return {
+              ...layout,
+              Markers: layout.Markers.filter((m) => m.Id !== deletingMarker.Id),
+            };
+          }),
+        };
+      });
+
+      if (selectedMarker?.Id === deletingMarker.Id) setSelectedMarker(null);
+      setDeletingMarker(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete marker');
+    } finally {
+      setIsDeletingMarker(false);
+    }
   };
 
   const handleEditTitle = () => {
@@ -566,7 +956,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
     }
   };
 
-  const changedCount = Object.keys(positionOverrides).length;
+  const changedCount = Object.keys(positionOverrides).length + tempMarkerIds.size + Object.keys(markerEdits).length;
 
   if (loading) {
     return (
@@ -676,7 +1066,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
                 </span>
                 <button
                   onClick={handleSaveClick}
-                  disabled={changedCount === 0}
+                  disabled={!hasPendingChanges}
                   className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save size={12} /> Save
@@ -797,6 +1187,11 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
                           isEditMode={isEditMode}
                           positionOverrides={positionOverrides}
                           onMarkerDrag={handleMarkerDrag}
+                          onReplicate={handleReplicateMarker}
+                          onEditMarker={setEditingMarker}
+                          onDeleteMarker={setDeletingMarker}
+                          tempMarkerIds={tempMarkerIds}
+                          markerEdits={markerEdits}
                         />
                       )}
                       </div>
@@ -887,9 +1282,23 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
       )}
 
       {/* Confirmation Modal */}
-      {showConfirmModal && (
+      {showConfirmModal && layout2d && (
         <ConfirmationModal
-          changes={getChanges()}
+          positionChanges={getChanges().filter(c => !tempMarkerIds.has(c.markerId))}
+          newMarkers={Array.from(tempMarkerIds).map((tempId) => {
+            const marker = layout2d.Markers.find(m => m.Id === tempId)!;
+            const override = positionOverrides[tempId];
+            return {
+              marker,
+              sourceId: replicateSources[tempId],
+              position: { top: override ? override.top : marker.PositionTop, left: override ? override.left : marker.PositionLeft },
+              edits: markerEdits[tempId],
+            };
+          }).filter(nm => nm.marker)}
+          editChanges={Object.entries(markerEdits)
+            .filter(([id]) => !tempMarkerIds.has(id))
+            .map(([id, edits]) => ({ markerId: id, marker: layout2d.Markers.find(m => m.Id === id)!, edits }))
+            .filter(ec => ec.marker)}
           onConfirm={handleConfirmSave}
           onCancel={() => setShowConfirmModal(false)}
           isSaving={isSaving}
@@ -908,6 +1317,89 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
           onCancel={() => setShowTitleConfirmModal(false)}
           isSaving={isSavingTitle}
         />
+      )}
+
+      {/* Edit Marker Modal */}
+      {editingMarker && (
+        <MarkerEditModal
+          marker={editingMarker}
+          sourceMarker={isNewMarker && editingMarker ? layout2d?.Markers.find(m => m.Id === replicateSources[editingMarker.Id]) ?? undefined : undefined}
+          layout2dId={layout2d?.Id}
+          onConfirm={handleEditMarkerConfirm}
+          onCancel={handleCancelEditMarker}
+          isSaving={isSavingMarker}
+          isNew={isNewMarker}
+          allIconUrls={layout2d ? Array.from(new Set(layout2d.Markers.map(m => m.IconUrl).filter((u): u is string => !!u))) : []}
+        />
+      )}
+
+      {/* Delete Marker Confirmation Modal */}
+      {deletingMarker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full flex flex-col">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-red-600">Delete Marker</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Are you sure you want to delete &ldquo;{deletingMarker.Title || deletingMarker.Code}&rdquo;?
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="font-medium text-gray-700">Title</span>
+                  <p className="text-gray-600">{deletingMarker.Title || '(empty)'}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Code</span>
+                  <p className="text-gray-600 font-mono">{deletingMarker.Code}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Position</span>
+                  <p className="text-gray-600">
+                    {deletingMarker.PositionTop?.toFixed(1)}, {deletingMarker.PositionLeft?.toFixed(1)}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">UUID</span>
+                  <p className="text-gray-600 font-mono text-[10px]">{deletingMarker.Id}</p>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-semibold text-gray-700">SQL Preview</h3>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(`DELETE FROM "Markers" WHERE "Id" = '${deletingMarker.Id}'::uuid;`)}
+                    className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                  >
+                    Copy SQL
+                  </button>
+                </div>
+                <div className="bg-gray-900 text-red-400 p-3 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+                  {`DELETE FROM "Markers" WHERE "Id" = '${deletingMarker.Id}'::uuid;`}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setDeletingMarker(null)}
+                disabled={isDeletingMarker}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteMarker}
+                disabled={isDeletingMarker}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm disabled:opacity-50"
+              >
+                {isDeletingMarker ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
