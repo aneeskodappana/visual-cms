@@ -51,6 +51,12 @@ export default function Home() {
                 Project Search
               </a>
               <a
+                href="/yasparkplace"
+                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors text-sm font-medium"
+              >
+                YasParkPlace
+              </a>
+              <a
                 href="/api/db-test"
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
               >

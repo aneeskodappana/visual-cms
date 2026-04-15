@@ -18,7 +18,8 @@
     "react": "^18",
     "react-dom": "^18",
     "react-zoom-pan-pinch": "^3.6.1",
-    "three": "^0.170.0"
+    "three": "^0.170.0",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/node": "^20",
@@ -26,6 +27,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/three": "^0.170.0",
+    "@types/uuid": "^10.0.0",
     "eslint": "^8",
     "eslint-config-next": "14.2.13",
     "postcss": "^8",
