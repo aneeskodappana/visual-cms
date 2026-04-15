@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, Check, Play, ChevronDown, ChevronRight } from 'lucide-react';
+import { Copy, Check, Play, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TowerMarkerEntry {
@@ -13,7 +13,7 @@ interface TowerMarkerEntry {
 
 type TowerMarkersConfig = Record<string, TowerMarkerEntry[]>;
 
-const MARKER_TEMPLATES = [
+const MARKER_TEMPLATES: { title: string; iconPath: string }[] = [
   { title: 'Ferrari World', iconPath: 'project_marker/project_ferrari_world_north-east.svg' },
   { title: 'Yas Mall', iconPath: 'project_marker/project_yas_mall_north-east.svg' },
   { title: 'Yas Marina', iconPath: 'project_marker/project_yas_marina_north-east.svg' },
@@ -21,11 +21,16 @@ const MARKER_TEMPLATES = [
   { title: 'Yas Beach', iconPath: 'project_marker/project_yas_beach_north-east.svg' },
 ];
 
-const TOWERS = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'];
+interface FetchedFloorplate {
+  viewConfigId: string;
+  layout2dId: string;
+  code: string;
+  tower: string;
+}
 
-function buildDefaultTowerMarkers(): TowerMarkersConfig {
+function buildMarkersForTowers(towers: string[]): TowerMarkersConfig {
   const config: TowerMarkersConfig = {};
-  for (const tower of TOWERS) {
+  for (const tower of towers) {
     config[tower] = MARKER_TEMPLATES.map(m => ({
       ...m,
       positionTop: 0,
@@ -46,9 +51,13 @@ export function FloorplateMarkerAdder() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [iconBasePath, setIconBasePath] = useState(DEFAULT_ICON_BASE_PATH);
-  const [towerMarkers, setTowerMarkers] = useState<TowerMarkersConfig>(buildDefaultTowerMarkers);
-  const [expandedTowers, setExpandedTowers] = useState<Set<string>>(new Set(['b1']));
+  const [towerMarkers, setTowerMarkers] = useState<TowerMarkersConfig>({});
+  const [expandedTowers, setExpandedTowers] = useState<Set<string>>(new Set());
   const [syncTitleAndIcon, setSyncTitleAndIcon] = useState(true);
+  const [fetchedFloorplates, setFetchedFloorplates] = useState<FetchedFloorplate[]>([]);
+  const [detectedTowers, setDetectedTowers] = useState<string[]>([]);
+
+  const primaryTower = detectedTowers[0] || '';
 
   const extractTowerFromCode = (code: string): string | null => {
     const match = code.match(/yasparkplace_(b\d+)_/i);
@@ -98,7 +107,7 @@ export function FloorplateMarkerAdder() {
     return `INSERT INTO public."Markers" (${columns}) VALUES(${values});`;
   };
 
-  const handleGenerate = async () => {
+  const handleFetch = async () => {
     if (!whereCondition.trim()) {
       setError('Please enter a WHERE condition');
       return;
@@ -107,6 +116,8 @@ export function FloorplateMarkerAdder() {
     setLoading(true);
     setError(null);
     setGeneratedSql('');
+    setFetchedFloorplates([]);
+    setDetectedTowers([]);
 
     try {
       const response = await fetch(
@@ -127,58 +138,87 @@ export function FloorplateMarkerAdder() {
         return;
       }
 
-      const towerFloorplates: Record<
-        string,
-        Array<{ viewConfigId: string; layout2dId: string; code: string }>
-      > = {};
+      const parsed: FetchedFloorplate[] = [];
+      const towerSet = new Set<string>();
 
       for (const fp of floorplates) {
         const tower = extractTowerFromCode(fp.Code);
         if (!tower) continue;
-        if (!towerFloorplates[tower]) towerFloorplates[tower] = [];
+        towerSet.add(tower);
         if (fp.Layout2Ds && fp.Layout2Ds.length > 0) {
-          towerFloorplates[tower].push({
+          parsed.push({
             viewConfigId: fp.Id,
             layout2dId: fp.Layout2Ds[0].Id,
             code: fp.Code,
+            tower,
           });
         }
       }
 
-      const sqlStatements: string[] = [];
-      let globalMarkerIndex = 12525;
+      const towers = Array.from(towerSet).sort();
+      setFetchedFloorplates(parsed);
+      setDetectedTowers(towers);
+      setExpandedTowers(new Set([towers[0]]));
 
-      for (const [tower, floorplateList] of Object.entries(towerFloorplates)) {
-        const markers = towerMarkers[tower];
-        if (!markers || markers.length === 0) continue;
-
-        sqlStatements.push(
-          `-- Tower ${tower.toUpperCase()} markers (${floorplateList.length} floorplates, ${markers.length} markers each)`
-        );
-
-        for (const fp of floorplateList) {
-          sqlStatements.push(`-- ${fp.code}`);
-          for (const marker of markers) {
-            const sql = generateMarkerInsert(
-              fp.layout2dId,
-              globalMarkerIndex++,
-              marker.title,
-              buildFullIconUrl(marker.iconPath),
-              marker.positionTop,
-              marker.positionLeft
-            );
-            sqlStatements.push(sql);
-          }
-          sqlStatements.push('');
+      setTowerMarkers(prev => {
+        const updated: TowerMarkersConfig = {};
+        for (const tower of towers) {
+          updated[tower] = prev[tower] || MARKER_TEMPLATES.map(m => ({
+            ...m,
+            positionTop: 0,
+            positionLeft: 0,
+          }));
         }
-      }
-
-      setGeneratedSql(sqlStatements.join('\n'));
+        return updated;
+      });
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGenerate = () => {
+    if (fetchedFloorplates.length === 0) {
+      setError('Please fetch floorplates first');
+      return;
+    }
+
+    const towerFloorplates: Record<string, FetchedFloorplate[]> = {};
+    for (const fp of fetchedFloorplates) {
+      if (!towerFloorplates[fp.tower]) towerFloorplates[fp.tower] = [];
+      towerFloorplates[fp.tower].push(fp);
+    }
+
+    const sqlStatements: string[] = [];
+    let globalMarkerIndex = 12525;
+
+    for (const [tower, floorplateList] of Object.entries(towerFloorplates)) {
+      const markers = towerMarkers[tower];
+      if (!markers || markers.length === 0) continue;
+
+      sqlStatements.push(
+        `-- Tower ${tower.toUpperCase()} markers (${floorplateList.length} floorplates, ${markers.length} markers each)`
+      );
+
+      for (const fp of floorplateList) {
+        sqlStatements.push(`-- ${fp.code}`);
+        for (const marker of markers) {
+          const sql = generateMarkerInsert(
+            fp.layout2dId,
+            globalMarkerIndex++,
+            marker.title,
+            buildFullIconUrl(marker.iconPath),
+            marker.positionTop,
+            marker.positionLeft
+          );
+          sqlStatements.push(sql);
+        }
+        sqlStatements.push('');
+      }
+    }
+
+    setGeneratedSql(sqlStatements.join('\n'));
   };
 
   const handleCopy = async () => {
@@ -306,7 +346,23 @@ export function FloorplateMarkerAdder() {
           <p className="text-xs text-slate-400 mt-1">Common base path prepended to each marker icon path</p>
         </div>
 
-        <div className="border border-slate-200 rounded-lg">
+        <button
+          onClick={handleFetch}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Search size={16} />
+          {loading ? 'Fetching...' : 'Fetch Floorplates'}
+        </button>
+
+        {detectedTowers.length > 0 && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
+            Found <strong>{fetchedFloorplates.length}</strong> floorplates across <strong>{detectedTowers.length}</strong> towers: {detectedTowers.map(t => t.toUpperCase()).join(', ')}
+          </div>
+        )}
+
+        {detectedTowers.length > 0 && (
+          <div className="border border-slate-200 rounded-lg">
           <div className="px-4 py-3 bg-slate-50 rounded-t-lg border-b border-slate-200 flex items-center justify-between">
             <span className="text-sm font-medium text-slate-700">Tower &times; Marker Configuration</span>
             <div className="flex items-center gap-4">
@@ -391,8 +447,8 @@ export function FloorplateMarkerAdder() {
                                 value={marker.title}
                                 onChange={(e) => updateTowerMarker(tower, idx, 'title', e.target.value)}
                                 placeholder="Title"
-                                disabled={syncTitleAndIcon && tower !== 'b1'}
-                                className={`w-full px-2 py-1 border border-slate-300 rounded text-sm ${syncTitleAndIcon && tower !== 'b1' ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                                disabled={syncTitleAndIcon && tower !== primaryTower}
+                                className={`w-full px-2 py-1 border border-slate-300 rounded text-sm ${syncTitleAndIcon && tower !== primaryTower ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                               />
                             </td>
                             <td className="py-1.5 pr-2">
@@ -401,8 +457,8 @@ export function FloorplateMarkerAdder() {
                                 value={marker.iconPath}
                                 onChange={(e) => updateTowerMarker(tower, idx, 'iconPath', e.target.value)}
                                 placeholder="Relative icon path"
-                                disabled={syncTitleAndIcon && tower !== 'b1'}
-                                className={`w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono ${syncTitleAndIcon && tower !== 'b1' ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                                disabled={syncTitleAndIcon && tower !== primaryTower}
+                                className={`w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono ${syncTitleAndIcon && tower !== primaryTower ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                               />
                             </td>
                             <td className="py-1.5 pr-2">
@@ -425,7 +481,7 @@ export function FloorplateMarkerAdder() {
                                 className="w-full px-2 py-1 border border-slate-300 rounded text-sm"
                               />
                             </td>
-                            {(!syncTitleAndIcon || tower === 'b1') && (
+                            {(!syncTitleAndIcon || tower === primaryTower) && (
                               <td className="py-1.5 text-right">
                                 <button
                                   onClick={() => syncTitleAndIcon ? removeMarkerFromAllTowers(idx) : removeMarkerFromTower(tower, idx)}
@@ -435,12 +491,12 @@ export function FloorplateMarkerAdder() {
                                 </button>
                               </td>
                             )}
-                            {syncTitleAndIcon && tower !== 'b1' && <td />}
+                            {syncTitleAndIcon && tower !== primaryTower && <td />}
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    {(!syncTitleAndIcon || tower === 'b1') && (
+                    {(!syncTitleAndIcon || tower === primaryTower) && (
                       <button
                         onClick={() => syncTitleAndIcon ? addMarkerToAllTowers() : addMarkerToTower(tower)}
                         className="px-2.5 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded"
@@ -454,15 +510,17 @@ export function FloorplateMarkerAdder() {
             ))}
           </div>
         </div>
+        )}
 
-        <button
-          onClick={handleGenerate}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Play size={16} />
-          {loading ? 'Generating...' : 'Generate SQL'}
-        </button>
+        {detectedTowers.length > 0 && (
+          <button
+            onClick={handleGenerate}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            <Play size={16} />
+            Generate SQL
+          </button>
+        )}
 
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
