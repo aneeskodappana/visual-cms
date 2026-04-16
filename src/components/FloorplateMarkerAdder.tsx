@@ -14,11 +14,10 @@ interface TowerMarkerEntry {
 type TowerMarkersConfig = Record<string, TowerMarkerEntry[]>;
 
 const MARKER_TEMPLATES: { title: string; iconPath: string }[] = [
-  { title: 'Ferrari World', iconPath: 'project_marker/project_ferrari_world_north-east.svg' },
-  { title: 'Yas Mall', iconPath: 'project_marker/project_yas_mall_north-east.svg' },
-  { title: 'Yas Marina', iconPath: 'project_marker/project_yas_marina_north-east.svg' },
-  { title: 'Warner Bros', iconPath: 'project_marker/project_warner_bros_north-east.svg' },
-  { title: 'Yas Beach', iconPath: 'project_marker/project_yas_beach_north-east.svg' },
+  { title: 'YasLinksAbuDhabi', iconPath: 'landmarks/{tower}/project_yas_links.png' },
+  { title: 'YasMarinaCircuit', iconPath: 'landmarks/{tower}/project_yas_marina_circuit.png' },
+  { title: 'DisneylandAbuDhabi', iconPath: 'landmarks/{tower}/project_disneyland.png' },
+  { title: 'FerrariWorld', iconPath: 'landmarks/{tower}/project_ferrari_world.png' },
 ];
 
 interface FetchedFloorplate {
@@ -28,19 +27,16 @@ interface FetchedFloorplate {
   tower: string;
 }
 
-function buildMarkersForTowers(towers: string[]): TowerMarkersConfig {
-  const config: TowerMarkersConfig = {};
-  for (const tower of towers) {
-    config[tower] = MARKER_TEMPLATES.map(m => ({
-      ...m,
-      positionTop: 0,
-      positionLeft: 0,
-    }));
-  }
-  return config;
+function buildMarkersForTower(tower: string): TowerMarkerEntry[] {
+  return MARKER_TEMPLATES.map(m => ({
+    title: m.title,
+    iconPath: m.iconPath.replace('{tower}', tower),
+    positionTop: 0,
+    positionLeft: 0,
+  }));
 }
 
-const DEFAULT_ICON_BASE_PATH = '/container_projects/project_1-0-0_uae_abudhabi_a93e1b7f-5b89-4d1c-b2d8-ea7c5d1f3b42/backplate_image_project';
+const DEFAULT_ICON_BASE_PATH = '/container_projects/project_1-0-0_uae_abudhabi_yasparkplace/backplate_image_tower-floorplate';
 
 const DEFAULT_WHERE_CONDITION = `"Code" ilike 'yasparkplace_%' and "Kind" = 4 and "Code" not in ('yasparkplace_b1', 'yasparkplace_b2', 'yasparkplace_b3', 'yasparkplace_b4', 'yasparkplace_b5', 'yasparkplace_b6')`;
 
@@ -56,6 +52,7 @@ export function FloorplateMarkerAdder() {
   const [syncTitleAndIcon, setSyncTitleAndIcon] = useState(true);
   const [fetchedFloorplates, setFetchedFloorplates] = useState<FetchedFloorplate[]>([]);
   const [detectedTowers, setDetectedTowers] = useState<string[]>([]);
+  const [towerPasteText, setTowerPasteText] = useState<Record<string, string>>({});
 
   const primaryTower = detectedTowers[0] || '';
 
@@ -163,11 +160,7 @@ export function FloorplateMarkerAdder() {
       setTowerMarkers(prev => {
         const updated: TowerMarkersConfig = {};
         for (const tower of towers) {
-          updated[tower] = prev[tower] || MARKER_TEMPLATES.map(m => ({
-            ...m,
-            positionTop: 0,
-            positionLeft: 0,
-          }));
+          updated[tower] = prev[tower] || buildMarkersForTower(tower);
         }
         return updated;
       });
@@ -252,13 +245,79 @@ export function FloorplateMarkerAdder() {
         for (const t of Object.keys(updated)) {
           if (updated[t][idx]) {
             updated[t] = [...updated[t]];
-            updated[t][idx] = { ...updated[t][idx], [field]: value };
+            let syncedValue = value;
+            if (field === 'iconPath' && typeof value === 'string') {
+              syncedValue = value.replace(`/${tower}/`, `/${t}/`);
+            }
+            updated[t][idx] = { ...updated[t][idx], [field]: syncedValue };
           }
         }
       } else {
         updated[tower] = [...updated[tower]];
         updated[tower][idx] = { ...updated[tower][idx], [field]: value };
       }
+      return updated;
+    });
+  };
+
+  const populateFromPaste = (tower: string) => {
+    const text = towerPasteText[tower];
+    if (!text?.trim()) return;
+
+    const lines = text.trim().split('\n').filter(l => l.trim());
+    const parsed = lines.map(line => {
+      const parts = line.split(',').map(p => p.trim());
+      return {
+        title: parts[0] || '',
+        positionLeft: parseFloat(parts[1]) || 0,
+        positionTop: parseFloat(parts[2]) || 0,
+      };
+    });
+
+    setTowerMarkers(prev => {
+      const updated = { ...prev };
+      const existing = [...(updated[tower] || [])];
+
+      for (let i = 0; i < parsed.length; i++) {
+        if (i < existing.length) {
+          existing[i] = {
+            ...existing[i],
+            title: parsed[i].title,
+            positionLeft: parsed[i].positionLeft,
+            positionTop: parsed[i].positionTop,
+          };
+        } else {
+          existing.push({
+            title: parsed[i].title,
+            iconPath: '',
+            positionLeft: parsed[i].positionLeft,
+            positionTop: parsed[i].positionTop,
+          });
+        }
+      }
+
+      updated[tower] = existing;
+
+      if (syncTitleAndIcon) {
+        for (const t of Object.keys(updated)) {
+          if (t === tower) continue;
+          const towerExisting = [...(updated[t] || [])];
+          for (let i = 0; i < parsed.length; i++) {
+            if (i < towerExisting.length) {
+              towerExisting[i] = { ...towerExisting[i], title: parsed[i].title };
+            } else {
+              towerExisting.push({
+                title: parsed[i].title,
+                iconPath: '',
+                positionLeft: 0,
+                positionTop: 0,
+              });
+            }
+          }
+          updated[t] = towerExisting;
+        }
+      }
+
       return updated;
     });
   };
@@ -417,6 +476,20 @@ export function FloorplateMarkerAdder() {
 
                 {expandedTowers.has(tower) && (
                   <div className="px-4 pb-4 space-y-2">
+                    <div className="flex gap-2 items-start mb-2">
+                      <textarea
+                        value={towerPasteText[tower] || ''}
+                        onChange={(e) => setTowerPasteText(prev => ({ ...prev, [tower]: e.target.value }))}
+                        placeholder={`Paste CSV: Title,Left,Top\ne.g.\nYasLinksAbuDhabi,1305,702\nFerrariWorld,702,702`}
+                        className="flex-1 h-24 px-2 py-1.5 border border-slate-300 rounded text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-y"
+                      />
+                      <button
+                        onClick={() => populateFromPaste(tower)}
+                        className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors whitespace-nowrap"
+                      >
+                        Populate
+                      </button>
+                    </div>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
