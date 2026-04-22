@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2, Database } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2, Database, GripVertical, Minimize2, Maximize2 } from 'lucide-react';
 import Link from 'next/link';
 import { TransformWrapper, TransformComponent, useTransformEffect } from 'react-zoom-pan-pinch';
 import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName } from '@/lib/cdnUtils';
@@ -707,6 +707,22 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [isDeletingMarker, setIsDeletingMarker] = useState(false);
   const [selectedMarkerIds, setSelectedMarkerIds] = useState<Set<string>>(new Set());
   const [sqlCopiedType, setSqlCopiedType] = useState<'insert' | 'delete' | null>(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [headerPos, setHeaderPos] = useState({ x: 16, y: 16 });
+  const headerDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+
+  const handleHeaderDragStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    headerDragRef.current = { startX: e.clientX, startY: e.clientY, originX: headerPos.x, originY: headerPos.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const handleHeaderDragMove = (e: React.PointerEvent) => {
+    if (!headerDragRef.current) return;
+    const dx = e.clientX - headerDragRef.current.startX;
+    const dy = e.clientY - headerDragRef.current.startY;
+    setHeaderPos({ x: headerDragRef.current.originX + dx, y: headerDragRef.current.originY + dy });
+  };
+  const handleHeaderDragEnd = () => { headerDragRef.current = null; };
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -1031,230 +1047,242 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const backplateUrl = constructCdnUrl(layout2d?.BackplateUrl, viewConfig.CdnBaseUrl);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Fixed Minimal Header */}
-      <div className={`fixed top-0 left-0 right-0 z-40 border-b shadow-sm px-6 py-2 ${isEditMode ? 'border-orange-300 bg-orange-50' : 'bg-white border-gray-200'}`}>
-        <div className="flex items-center justify-between max-w-full">
-          <div className="flex items-center gap-4">
-            <Link href="/viewconfig-search" className="text-blue-600 hover:text-blue-700 flex items-center gap-2">
-              <ChevronLeft size={16} />
+    <div className="w-screen h-screen overflow-hidden bg-gray-900 relative">
+      {/* Floating Draggable Header Panel */}
+      <div
+        className="fixed z-40 select-none"
+        style={{ left: headerPos.x, top: headerPos.y }}
+      >
+        <div className={`rounded-lg shadow-xl border backdrop-blur-sm ${isEditMode ? 'border-orange-400 bg-orange-50/95' : 'border-gray-300 bg-white/95'}`}>
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 cursor-grab active:cursor-grabbing"
+            onPointerDown={handleHeaderDragStart}
+            onPointerMove={handleHeaderDragMove}
+            onPointerUp={handleHeaderDragEnd}
+          >
+            <GripVertical size={14} className="text-gray-400 flex-shrink-0" />
+            <Link href="/viewconfig-search" className="text-blue-600 hover:text-blue-700 flex-shrink-0">
+              <ChevronLeft size={14} />
             </Link>
-            <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-900 truncate max-w-[200px]">
+              {viewConfig.Title || 'Untitled'}
+            </span>
+            {isEditMode && (
+              <span className="text-[10px] text-orange-600 font-medium whitespace-nowrap">
+                Edit {changedCount > 0 && `(${changedCount})`}
+              </span>
+            )}
+            <button
+              onClick={() => setHeaderCollapsed(!headerCollapsed)}
+              className="ml-auto text-gray-400 hover:text-gray-700 flex-shrink-0"
+            >
+              {headerCollapsed ? <Maximize2 size={12} /> : <Minimize2 size={12} />}
+            </button>
+          </div>
+
+          {!headerCollapsed && (
+            <div className="px-3 pb-2 pt-1 border-t border-gray-200/60 space-y-1.5">
               {isEditingTitle ? (
-                <>
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <input
                     type="text"
                     value={editingTitle}
                     onChange={(e) => setEditingTitle(e.target.value)}
-                    className="text-lg font-bold text-gray-900 bg-transparent border-b border-blue-500 focus:outline-none truncate"
+                    className="text-xs font-bold text-gray-900 bg-transparent border-b border-blue-500 focus:outline-none w-28"
                     placeholder="Title"
                   />
                   <input
                     type="text"
                     value={editingSubtitle}
                     onChange={(e) => setEditingSubtitle(e.target.value)}
-                    className="text-sm text-gray-600 bg-transparent border-b border-blue-500 focus:outline-none"
+                    className="text-xs text-gray-600 bg-transparent border-b border-blue-500 focus:outline-none w-24"
                     placeholder="Subtitle"
                   />
-                  <button
-                    onClick={handleSaveTitle}
-                    className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={handleCancelEditTitle}
-                    className="text-xs px-2 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </>
+                  <button onClick={handleSaveTitle} className="text-[10px] px-1.5 py-0.5 bg-green-600 text-white rounded hover:bg-green-700">Save</button>
+                  <button onClick={handleCancelEditTitle} className="text-[10px] px-1.5 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600">Cancel</button>
+                </div>
               ) : (
-                <>
-                  <h1 className="text-lg font-bold text-gray-900 truncate">
-                    {viewConfig.Title || 'Untitled'} 
-                    {viewConfig.Subtitle && <small className="text-gray-600 ml-1">- {viewConfig.Subtitle}</small>}
-                  </h1>
-                  <button
-                    onClick={handleEditTitle}
-                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                    title="Edit title and subtitle"
-                  >
-                    <Pencil size={10} />
-                  </button>
-                </>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-gray-500 truncate max-w-[180px]">
+                    {viewConfig.Subtitle && `${viewConfig.Subtitle} · `}{viewConfig.Code}
+                  </span>
+                  <button onClick={handleEditTitle} className="text-gray-400 hover:text-gray-700"><Pencil size={10} /></button>
+                </div>
               )}
+
+              <div className="flex items-center gap-1 flex-wrap">
+                <button
+                  onClick={() => {
+                    const query = `SELECT * FROM "ViewConfigs" WHERE "Code" = '${viewConfig.Code}';`;
+                    navigator.clipboard.writeText(query);
+                  }}
+                  className="text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                >
+                  Code SQL
+                </button>
+                <button
+                  onClick={() => {
+                    const query = `SELECT * FROM "ViewConfigs" WHERE "Id" = '${viewConfig.Id}'::uuid;`;
+                    navigator.clipboard.writeText(query);
+                  }}
+                  className="text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                >
+                  ID SQL
+                </button>
+                {layout2d && (
+                  <button
+                    onClick={() => {
+                      const query = `SELECT * FROM "Layout2Ds" WHERE "Id" = '${layout2d.Id}'::uuid;`;
+                      navigator.clipboard.writeText(query);
+                    }}
+                    className="text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                  >
+                    Layout SQL
+                  </button>
+                )}
+                {isEditMode ? (
+                  <>
+                    <button
+                      onClick={handleSaveClick}
+                      disabled={!hasPendingChanges}
+                      className="px-2 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 text-[10px] font-medium flex items-center gap-0.5 disabled:opacity-50"
+                    >
+                      <Save size={10} /> Save
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="px-2 py-0.5 bg-gray-500 text-white rounded hover:bg-gray-600 text-[10px] font-medium flex items-center gap-0.5"
+                    >
+                      <X size={10} /> Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setIsEditMode(true)}
+                    className="px-2 py-0.5 bg-orange-500 text-white rounded hover:bg-orange-600 text-[10px] font-medium flex items-center gap-0.5"
+                  >
+                    <Pencil size={10} /> Edit
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const query = `SELECT * FROM "ViewConfigs" WHERE "Code" = '${viewConfig.Code}';`;
-                navigator.clipboard.writeText(query);
-              }}
-              className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-              title="Copy SELECT * query for Code"
-            >
-              Copy Code Query
-            </button>
-            <button
-              onClick={() => {
-                const query = `SELECT * FROM "ViewConfigs" WHERE "Id" = '${viewConfig.Id}'::uuid;`;
-                navigator.clipboard.writeText(query);
-              }}
-              className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-              title="Copy SELECT * query for ID"
-            >
-              Copy ID Query
-            </button>
-            {isEditMode ? (
-              <>
-                <span className="text-xs text-orange-700 font-medium">
-                  Edit Mode {changedCount > 0 && `(${changedCount} changed)`}
-                </span>
-                <button
-                  onClick={handleSaveClick}
-                  disabled={!hasPendingChanges}
-                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Save size={12} /> Save
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors font-medium text-xs flex items-center gap-1"
-                >
-                  <X size={12} /> Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setIsEditMode(true)}
-                className="px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors font-medium text-xs flex items-center gap-1"
-              >
-                <Pencil size={12} /> Edit
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex flex-col pt-16">
-        {/* Layout2D Selector */}
-        {viewConfig.Layout2Ds && viewConfig.Layout2Ds.length > 1 && (
-          <div className="max-w-10xl mx-auto w-full px-6 pt-6 mb-6 flex items-center gap-4">
-            <button
-              onClick={() => setCurrentLayout2DIndex(Math.max(0, currentLayout2DIndex - 1))}
-              disabled={currentLayout2DIndex === 0}
-              className="p-2 hover:bg-gray-200 disabled:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ChevronLeft size={20} className="text-gray-600" />
-            </button>
-            <div className="flex-1 text-center">
-              <p className="text-sm font-medium text-gray-700">
-                {layout2d?.DisplayName || `Layout ${currentLayout2DIndex + 1}`}
-              </p>
-              <p className="text-xs text-gray-500">
-                {currentLayout2DIndex + 1} of {viewConfig.Layout2Ds.length}
-              </p>
-            </div>
-            <button
-              onClick={() => setCurrentLayout2DIndex(Math.min(viewConfig.Layout2Ds.length - 1, currentLayout2DIndex + 1))}
-              disabled={currentLayout2DIndex === viewConfig.Layout2Ds.length - 1}
-              className="p-2 hover:bg-gray-200 disabled:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ChevronRight size={20} className="text-gray-600" />
-            </button>
-          </div>
-        )}
+      {/* Floating Layout2D Selector */}
+      {viewConfig.Layout2Ds && viewConfig.Layout2Ds.length > 1 && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-30 bg-white/90 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 flex items-center gap-1 px-2 py-1">
+          <button
+            onClick={() => setCurrentLayout2DIndex(Math.max(0, currentLayout2DIndex - 1))}
+            disabled={currentLayout2DIndex === 0}
+            className="p-0.5 hover:bg-gray-200 disabled:opacity-30 rounded-full transition-colors"
+          >
+            <ChevronLeft size={14} className="text-gray-600" />
+          </button>
+          <span className="text-[11px] font-medium text-gray-700 px-2 whitespace-nowrap">
+            {layout2d?.DisplayName || `Layout ${currentLayout2DIndex + 1}`}
+            <span className="text-gray-400 ml-1">{currentLayout2DIndex + 1}/{viewConfig.Layout2Ds.length}</span>
+          </span>
+          <button
+            onClick={() => setCurrentLayout2DIndex(Math.min(viewConfig.Layout2Ds.length - 1, currentLayout2DIndex + 1))}
+            disabled={currentLayout2DIndex === viewConfig.Layout2Ds.length - 1}
+            className="p-0.5 hover:bg-gray-200 disabled:opacity-30 rounded-full transition-colors"
+          >
+            <ChevronRight size={14} className="text-gray-600" />
+          </button>
+        </div>
+      )}
 
-        {/* Layout2D Viewer - Full Width */}
-        {layout2d && backplateUrl && (
-          <div className="flex-1 bg-white shadow-md overflow-hidden flex flex-col">
-            <TransformWrapper
-              initialScale={1}
-              initialPositionX={0}
-              initialPositionY={0}
-              wheel={{ step: 0.1 }}
-              doubleClick={{ disabled: false }}
-              panning={{ disabled: isEditMode }}
-            >
-              {(utils) => (
-                <div className="w-full h-full flex flex-col">
-                  <div className="fixed bottom-20 left-6 z-20 flex flex-col gap-2">
-                    <button
-                      onClick={() => utils.zoomIn()}
-                      className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
-                      title="Zoom In"
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={() => utils.zoomOut()}
-                      className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
-                      title="Zoom Out"
-                    >
-                      −
-                    </button>
-                    <button
-                      onClick={() => utils.resetTransform()}
-                      className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium transition-colors"
-                      title="Reset View"
-                    >
-                      Reset
-                    </button>
-                  </div>
+      {/* Full-screen Layout2D Viewer */}
+      {layout2d && backplateUrl && (
+        <TransformWrapper
+          initialScale={1}
+          minScale={1}
+          maxScale={10}
+          limitToBounds={false}
+          centerOnInit={true}
+          wheel={{ step: 0.1 }}
+          doubleClick={{ disabled: false }}
+          panning={{ disabled: false, velocityDisabled: true }}
+          onPanningStop={(ref) => {
+            const { positionX, positionY, scale } = ref.state;
+            const wrapperW = window.innerWidth;
+            const wrapperH = window.innerHeight;
+            const contentW = wrapperW * scale;
+            const contentH = (wrapperW * (layout2d.BackplateHeight || 1080) / (layout2d.BackplateWidth || 1920)) * scale;
+            const minX = Math.min(0, wrapperW - contentW);
+            const minY = Math.min(0, wrapperH - contentH);
+            const clampedX = Math.max(minX, Math.min(0, positionX));
+            const clampedY = Math.max(minY, Math.min(0, positionY));
+            if (clampedX !== positionX || clampedY !== positionY) {
+              ref.setTransform(clampedX, clampedY, scale, 200);
+            }
+          }}
+        >
+          {(utils) => (
+            <>
+              <div className="fixed bottom-20 left-6 z-20 flex flex-col gap-2">
+                <button
+                  onClick={() => utils.zoomIn()}
+                  className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
+                  title="Zoom In"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => utils.zoomOut()}
+                  className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
+                  title="Zoom Out"
+                >
+                  −
+                </button>
+                <button
+                  onClick={() => utils.resetTransform()}
+                  className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium transition-colors"
+                  title="Reset View"
+                >
+                  Reset
+                </button>
+              </div>
 
-                  <TransformComponent
-                    wrapperClass="w-full h-full"
-                    contentClass="w-full h-full"
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
-                      <div
-                        ref={containerRef}
-                        className="relative bg-gray-100"
-                        style={{
-                          width: `${layout2d.BackplateWidth || 1920}px`,
-                          maxWidth: '100%',
-                          aspectRatio: `${layout2d.BackplateWidth || 1920} / ${layout2d.BackplateHeight || 1080}`,
-                        }}
-                      >
-                      {/* Backplate Image */}
-                      <img
-                        src={backplateUrl}
-                        alt={layout2d.DisplayName || 'Layout'}
-                        className="w-full h-full"
-                        style={{ display: 'block' }}
-                      />
-
-                      {/* Markers Overlay */}
-                      {layout2d.Markers && layout2d.Markers.length > 0 && (
-                        <MarkerOverlay
-                          layout2d={layout2d}
-                          onSelectMarker={setSelectedMarker}
-                          isEditMode={isEditMode}
-                          positionOverrides={positionOverrides}
-                          onMarkerDrag={handleMarkerDrag}
-                          onReplicate={handleReplicateMarker}
-                          onEditMarker={setEditingMarker}
-                          onDeleteMarker={setDeletingMarker}
-                          tempMarkerIds={tempMarkerIds}
-                          markerEdits={markerEdits}
-                        />
-                      )}
-                      </div>
-                    </div>
-                  </TransformComponent>
+              <TransformComponent
+                wrapperStyle={{ width: '100vw', height: '100vh' }}
+              >
+                <div
+                  ref={containerRef}
+                  className="relative"
+                  style={{
+                    width: '100vw',
+                    aspectRatio: `${layout2d.BackplateWidth || 1920} / ${layout2d.BackplateHeight || 1080}`,
+                  }}
+                >
+                  <img
+                    src={backplateUrl}
+                    alt={layout2d.DisplayName || 'Layout'}
+                    className="w-full h-full"
+                    style={{ display: 'block' }}
+                  />
+                  {layout2d.Markers && layout2d.Markers.length > 0 && (
+                    <MarkerOverlay
+                      layout2d={layout2d}
+                      onSelectMarker={setSelectedMarker}
+                      isEditMode={isEditMode}
+                      positionOverrides={positionOverrides}
+                      onMarkerDrag={handleMarkerDrag}
+                      onReplicate={handleReplicateMarker}
+                      onEditMarker={setEditingMarker}
+                      onDeleteMarker={setDeletingMarker}
+                      tempMarkerIds={tempMarkerIds}
+                      markerEdits={markerEdits}
+                    />
+                  )}
                 </div>
-              )}
-            </TransformWrapper>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Panels */}
-      <div className="p-6">
-      </div>
+              </TransformComponent>
+            </>
+          )}
+        </TransformWrapper>
+      )}
 
       {/* Floating Markers Widget */}
       {layout2d && layout2d.Markers && layout2d.Markers.length > 0 && (
