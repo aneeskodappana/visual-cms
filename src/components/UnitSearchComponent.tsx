@@ -247,7 +247,10 @@ export function UnitSearchComponent() {
   return (
     <div className="space-y-6">
       <form onSubmit={handleSearch} className="p-6 bg-white border border-gray-200 rounded-lg shadow-sm">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-4">Units</h2>
+        <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+          Units 
+          <small className='text-red-500 bg-red-300 text-xs ml-4 rounded-lg px-2 py-1'>DON'T USE DEV UNITS SQL TO INSERT UNITS IN PROD, FOR PROD WE NEED DIFFERENT LOCATION ID THAT MATCHES SF</small>
+        </h2>
 
         <div className="flex flex-col lg:flex-row gap-4 items-end mb-4">
           <div className="flex-1">
