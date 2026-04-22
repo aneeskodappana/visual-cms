@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2, Database } from 'lucide-react';
 import Link from 'next/link';
 import { TransformWrapper, TransformComponent, useTransformEffect } from 'react-zoom-pan-pinch';
 import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName } from '@/lib/cdnUtils';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Layout2D {
   Id: string;
@@ -47,6 +48,23 @@ interface PositionChange {
   newLeft: number;
 }
 
+function buildMarkerInsertSql(marker: Marker, layout2dId: string, posTop?: number, posLeft?: number): string {
+  const esc = (s?: string) => s ? `'${s.replace(/'/g, "''")}'` : 'NULL';
+  const top = posTop ?? marker.PositionTop;
+  const left = posLeft ?? marker.PositionLeft;
+  return `INSERT INTO "Markers" (
+  "Id", "Kind", "SubType", "MarkerIndex", "Code", "IsVisible", "IsExplorable",
+  "NavigateTo", "IsShallowLink", "PositionTop", "PositionLeft", "KeepScale",
+  "Title", "TitleVisible", "IconUrl", "HoverIconUrl", "Layout2DId"
+) VALUES (
+  '${marker.Id}'::uuid, ${marker.Kind}, ${marker.SubType ?? 'NULL'}, ${marker.MarkerIndex ?? 'NULL'},
+  ${esc(marker.Code)}, true, false,
+  '', false, ${top.toFixed(6)}::float8, ${left.toFixed(6)}::float8, false,
+  ${esc(marker.Title)}, false, ${esc(marker.IconUrl)}, ${esc(marker.HoverIconUrl)},
+  '${layout2dId}'::uuid
+);`;
+}
+
 function MarkerOverlay({
   layout2d,
   onSelectMarker,
@@ -72,8 +90,12 @@ function MarkerOverlay({
 }) {
   const [scale, setScale] = useState(1);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [isDragConfirmed, setIsDragConfirmed] = useState(false);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const DRAG_THRESHOLD = 5;
 
   useTransformEffect(({ state }) => {
     setScale(state.scale);
@@ -84,6 +106,8 @@ function MarkerOverlay({
     e.preventDefault();
     e.stopPropagation();
     setDraggingId(markerId);
+    setIsDragConfirmed(false);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
@@ -91,6 +115,13 @@ function MarkerOverlay({
     if (!draggingId || !overlayRef.current) return;
     e.preventDefault();
     e.stopPropagation();
+
+    if (!isDragConfirmed && dragStartRef.current) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+      setIsDragConfirmed(true);
+    }
 
     const rect = overlayRef.current.getBoundingClientRect();
     const backplateWidth = layout2d.BackplateWidth || 1920;
@@ -110,6 +141,8 @@ function MarkerOverlay({
 
   const handlePointerUp = () => {
     setDraggingId(null);
+    setIsDragConfirmed(false);
+    dragStartRef.current = null;
   };
 
   return (
@@ -198,7 +231,7 @@ function MarkerOverlay({
             {isEditMode && activePopupId === marker.Id && (
               <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 z-[200] flex flex-col items-center">
                 <div className="w-0 h-0 border-l-4 border-r-4 border-b-4 border-l-transparent border-r-transparent border-b-gray-800"></div>
-                <div className="bg-gray-800 rounded-lg shadow-xl p-1.5 flex gap-1">
+                <div className="bg-gray-800 rounded-lg shadow-xl p-1.5 flex gap-1" onPointerDown={(e) => e.stopPropagation()}>
                   <button
                     onClick={(e) => { e.stopPropagation(); onReplicate?.(marker); setActivePopupId(null); }}
                     className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 text-white rounded text-[11px] font-medium hover:bg-purple-700 transition-colors whitespace-nowrap"
@@ -216,6 +249,17 @@ function MarkerOverlay({
                     className="flex items-center gap-1 px-2.5 py-1.5 bg-red-600 text-white rounded text-[11px] font-medium hover:bg-red-700 transition-colors whitespace-nowrap"
                   >
                     <Trash2 size={10} /> Delete
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const sql = buildMarkerInsertSql(marker, layout2d.Id, top, left);
+                      navigator.clipboard.writeText(sql);
+                      setActivePopupId(null);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white rounded text-[11px] font-medium hover:bg-emerald-700 transition-colors whitespace-nowrap"
+                  >
+                    <Database size={10} /> SQL
                   </button>
                 </div>
               </div>
@@ -353,12 +397,13 @@ function MarkerEditModal({
   if (isNew && sourceMarker && layout2dId) {
     const titleExpr = title ? `'${title.replace(/'/g, "''")}'` : `''`;
     const iconExpr = iconUrl ? `'${iconUrl.replace(/'/g, "''")}'` : 'NULL';
+    const newId = uuidv4();
     sql = `INSERT INTO "Markers" (
-  "Kind", "SubType", "MarkerIndex", "Code", "IsVisible", "IsExplorable",
+  "Id", "Kind", "SubType", "MarkerIndex", "Code", "IsVisible", "IsExplorable",
   "NavigateTo", "IsShallowLink", "PositionTop", "PositionLeft", "KeepScale",
   "Title", "TitleVisible", "IconUrl", "Layout2DId"
 ) SELECT
-  "Kind", "SubType",
+  '${newId}'::uuid, "Kind", "SubType",
   (SELECT COALESCE(MAX("MarkerIndex"), -1) + 1
    FROM "Markers" WHERE "Layout2DId" = '${layout2dId}'::uuid),
   "Code", "IsVisible", "IsExplorable", "NavigateTo", "IsShallowLink",
@@ -513,7 +558,8 @@ function ConfirmationModal({
       const iconUrl = nm.edits?.iconUrl ?? nm.marker.IconUrl;
       const titleExpr = title ? `'${title.replace(/'/g, "''")}'` : `''`;
       const iconExpr = iconUrl ? `'${iconUrl.replace(/'/g, "''")}'` : 'NULL';
-      parts.push(`INSERT INTO "Markers" (\n  "Kind","SubType","MarkerIndex","Code","IsVisible","IsExplorable",\n  "NavigateTo","IsShallowLink","PositionTop","PositionLeft","KeepScale",\n  "Title","TitleVisible","IconUrl","Layout2DId"\n) SELECT\n  "Kind","SubType",\n  (SELECT COALESCE(MAX("MarkerIndex"),-1)+1 FROM "Markers" WHERE "Layout2DId"="Layout2DId"),\n  "Code","IsVisible","IsExplorable","NavigateTo","IsShallowLink",\n  ${nm.position.top.toFixed(6)}::float8, ${nm.position.left.toFixed(6)}::float8, "KeepScale",\n  ${titleExpr}, "TitleVisible", ${iconExpr}, "Layout2DId"\nFROM "Markers"\nWHERE "Id" = '${nm.sourceId}'::uuid;`);
+      const newId = uuidv4();
+      parts.push(`INSERT INTO "Markers" (\n  "Id","Kind","SubType","MarkerIndex","Code","IsVisible","IsExplorable",\n  "NavigateTo","IsShallowLink","PositionTop","PositionLeft","KeepScale",\n  "Title","TitleVisible","IconUrl","Layout2DId"\n) SELECT\n  '${newId}'::uuid, "Kind","SubType",\n  (SELECT COALESCE(MAX("MarkerIndex"),-1)+1 FROM "Markers" WHERE "Layout2DId"="Layout2DId"),\n  "Code","IsVisible","IsExplorable","NavigateTo","IsShallowLink",\n  ${nm.position.top.toFixed(6)}::float8, ${nm.position.left.toFixed(6)}::float8, "KeepScale",\n  ${titleExpr}, "TitleVisible", ${iconExpr}, "Layout2DId"\nFROM "Markers"\nWHERE "Id" = '${nm.sourceId}'::uuid;`);
     });
     positionChanges.forEach((c) => {
       parts.push(`UPDATE "Markers"\n  SET "PositionTop" = ${c.newTop.toFixed(6)}::float8,\n      "PositionLeft" = ${c.newLeft.toFixed(6)}::float8\n  WHERE "Id" = '${c.markerId}'::uuid;`);
@@ -659,6 +705,8 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [markerEdits, setMarkerEdits] = useState<Record<string, { title?: string; iconUrl?: string }>>({});
   const [deletingMarker, setDeletingMarker] = useState<Marker | null>(null);
   const [isDeletingMarker, setIsDeletingMarker] = useState(false);
+  const [selectedMarkerIds, setSelectedMarkerIds] = useState<Set<string>>(new Set());
+  const [sqlCopiedType, setSqlCopiedType] = useState<'insert' | 'delete' | null>(null);
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -828,7 +876,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   };
 
   const handleReplicateMarker = (sourceMarker: Marker) => {
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${uuidv4()}`;
     const tempMarker: Marker = {
       Id: tempId,
       Kind: sourceMarker.Kind,
@@ -1224,6 +1272,55 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
           
           {showMarkersList && (
             <div className="max-h-96 overflow-y-auto border-t border-gray-200">
+              {/* Selection toolbar */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center justify-between gap-2 z-10">
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-600 hover:text-gray-900">
+                  <input
+                    type="checkbox"
+                    checked={layout2d.Markers.length > 0 && selectedMarkerIds.size === layout2d.Markers.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedMarkerIds(new Set(layout2d.Markers.map(m => m.Id)));
+                      } else {
+                        setSelectedMarkerIds(new Set());
+                      }
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {selectedMarkerIds.size > 0 ? `${selectedMarkerIds.size} selected` : 'Select all'}
+                </label>
+                {selectedMarkerIds.size > 0 && (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => {
+                        const markers = layout2d.Markers.filter(m => selectedMarkerIds.has(m.Id));
+                        const parts = markers.map(m => buildMarkerInsertSql(m, layout2d.Id));
+                        const sql = `BEGIN;\n\n${parts.join('\n\n')}\n\nCOMMIT;`;
+                        navigator.clipboard.writeText(sql);
+                        setSqlCopiedType('insert');
+                        setTimeout(() => setSqlCopiedType(null), 2000);
+                      }}
+                      className={`px-2 py-1 text-[10px] font-medium rounded transition-colors whitespace-nowrap ${sqlCopiedType === 'insert' ? 'bg-green-100 text-green-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+                    >
+                      {sqlCopiedType === 'insert' ? 'Copied!' : 'INSERT SQL'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const markers = layout2d.Markers.filter(m => selectedMarkerIds.has(m.Id));
+                        const parts = markers.map(m => `DELETE FROM "Markers" WHERE "Id" = '${m.Id}'::uuid;`);
+                        const sql = `BEGIN;\n\n${parts.join('\n')}\n\nCOMMIT;`;
+                        navigator.clipboard.writeText(sql);
+                        setSqlCopiedType('delete');
+                        setTimeout(() => setSqlCopiedType(null), 2000);
+                      }}
+                      className={`px-2 py-1 text-[10px] font-medium rounded transition-colors whitespace-nowrap ${sqlCopiedType === 'delete' ? 'bg-green-100 text-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}
+                    >
+                      {sqlCopiedType === 'delete' ? 'Copied!' : 'DELETE SQL'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Selected Marker Details */}
               {selectedMarker && (
                 <div className="border-b border-gray-200 bg-blue-50">
@@ -1262,18 +1359,34 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
               <div className="p-2">
                 {layout2d.Markers.map((marker) => (
-                  <button
+                  <div
                     key={marker.Id}
-                    onClick={() => setSelectedMarker(marker)}
-                    className={`w-full p-2 border rounded transition-colors text-left ${
+                    className={`flex items-center gap-2 p-2 border rounded transition-colors ${
                       selectedMarker?.Id === marker.Id 
                         ? 'border-blue-500 bg-blue-50' 
                         : 'border-gray-200 hover:bg-blue-50'
                     }`}
                   >
-                    <p className="text-xs font-medium text-gray-900 truncate">{marker.Title || marker.Code}</p>
-                    <p className="text-[10px] text-gray-500">{marker.Code}</p>
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={selectedMarkerIds.has(marker.Id)}
+                      onChange={(e) => {
+                        setSelectedMarkerIds(prev => {
+                          const next = new Set(prev);
+                          e.target.checked ? next.add(marker.Id) : next.delete(marker.Id);
+                          return next;
+                        });
+                      }}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                    />
+                    <button
+                      onClick={() => setSelectedMarker(marker)}
+                      className="flex-1 text-left min-w-0"
+                    >
+                      <p className="text-xs font-medium text-gray-900 truncate">{marker.Title || marker.Code}</p>
+                      <p className="text-[10px] text-gray-500">{marker.Code}</p>
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
