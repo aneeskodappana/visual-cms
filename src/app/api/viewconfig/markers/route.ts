@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sourceMarkerId, offsetTop = 20, offsetLeft = 20, title: titleOverride, iconUrl: iconUrlOverride } = body;
+    const { newId, sourceMarkerId, offsetTop = 20, offsetLeft = 20, title: titleOverride, iconUrl: iconUrlOverride } = body;
 
     if (!sourceMarkerId) {
       return NextResponse.json(
@@ -106,8 +106,11 @@ export async function POST(request: NextRequest) {
     `;
     const nextIndex = Number(maxIndex[0]?.nextIndex ?? 0);
 
+    const safeFloat = (v: any) => (v != null && !isNaN(v) ? v : null);
+
     const newMarker = await prisma.marker.create({
       data: {
+        ...(newId ? { Id: newId } : {}),
         Kind: source.Kind,
         SubType: source.SubType,
         MarkerIndex: nextIndex,
@@ -121,35 +124,35 @@ export async function POST(request: NextRequest) {
         KeepScale: source.KeepScale,
         LngLatJson: source.LngLatJson,
         ConnectionLineJson: source.ConnectionLineJson,
-        Scale: source.Scale,
-        MinZoom: source.MinZoom,
-        MaxZoom: source.MaxZoom,
-        MobileScale: source.MobileScale,
-        MobileMinZoom: source.MobileMinZoom,
-        MobileMaxZoom: source.MobileMaxZoom,
+        Scale: safeFloat(source.Scale),
+        MinZoom: safeFloat(source.MinZoom),
+        MaxZoom: safeFloat(source.MaxZoom),
+        MobileScale: safeFloat(source.MobileScale),
+        MobileMinZoom: safeFloat(source.MobileMinZoom),
+        MobileMaxZoom: safeFloat(source.MobileMaxZoom),
         LinkToMarkerIndex: source.LinkToMarkerIndex,
-        AnchorPositionTop: source.AnchorPositionTop,
-        AnchorPositionLeft: source.AnchorPositionLeft,
+        AnchorPositionTop: safeFloat(source.AnchorPositionTop),
+        AnchorPositionLeft: safeFloat(source.AnchorPositionLeft),
         HoverTitle: source.HoverTitle,
         HoverTitleVisible: source.HoverTitleVisible,
         HoverIconUrl: source.HoverIconUrl,
         HoverIconVersion: source.HoverIconVersion,
-        HoverIconWidth: source.HoverIconWidth,
-        HoverIconHeight: source.HoverIconHeight,
-        HoverScale: source.HoverScale,
+        HoverIconWidth: safeFloat(source.HoverIconWidth),
+        HoverIconHeight: safeFloat(source.HoverIconHeight),
+        HoverScale: safeFloat(source.HoverScale),
         SelectedTitle: source.SelectedTitle,
         SelectedTitleVisible: source.SelectedTitleVisible,
         SelectedIconUrl: source.SelectedIconUrl,
         SelectedIconVersion: source.SelectedIconVersion,
-        SelectedIconWidth: source.SelectedIconWidth,
-        SelectedIconHeight: source.SelectedIconHeight,
-        SelectedScale: source.SelectedScale,
+        SelectedIconWidth: safeFloat(source.SelectedIconWidth),
+        SelectedIconHeight: safeFloat(source.SelectedIconHeight),
+        SelectedScale: safeFloat(source.SelectedScale),
         Title: titleOverride !== undefined ? titleOverride : (source.Title ? `${source.Title} (copy)` : ''),
         TitleVisible: source.TitleVisible,
         IconUrl: iconUrlOverride !== undefined ? (iconUrlOverride || null) : source.IconUrl,
         IconVersion: source.IconVersion,
-        IconWidth: source.IconWidth,
-        IconHeight: source.IconHeight,
+        IconWidth: safeFloat(source.IconWidth),
+        IconHeight: safeFloat(source.IconHeight),
         Version: source.Version,
         IsPriority: source.IsPriority,
         Logo: source.Logo,

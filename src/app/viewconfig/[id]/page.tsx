@@ -378,6 +378,7 @@ function MarkerEditModal({
   isSaving,
   isNew,
   allIconUrls,
+  assignedNewId,
 }: {
   marker: Marker;
   sourceMarker?: Marker;
@@ -387,6 +388,7 @@ function MarkerEditModal({
   isSaving: boolean;
   isNew?: boolean;
   allIconUrls?: string[];
+  assignedNewId?: string;
 }) {
   const [title, setTitle] = useState(marker.Title || '');
   const [iconUrl, setIconUrl] = useState(marker.IconUrl || '');
@@ -397,18 +399,34 @@ function MarkerEditModal({
   if (isNew && sourceMarker && layout2dId) {
     const titleExpr = title ? `'${title.replace(/'/g, "''")}'` : `''`;
     const iconExpr = iconUrl ? `'${iconUrl.replace(/'/g, "''")}'` : 'NULL';
-    const newId = uuidv4();
+    const newId = assignedNewId || uuidv4();
     sql = `INSERT INTO "Markers" (
   "Id", "Kind", "SubType", "MarkerIndex", "Code", "IsVisible", "IsExplorable",
   "NavigateTo", "IsShallowLink", "PositionTop", "PositionLeft", "KeepScale",
-  "Title", "TitleVisible", "IconUrl", "Layout2DId"
+  "LngLatJson", "ConnectionLineJson", "Scale", "MinZoom", "MaxZoom",
+  "MobileScale", "MobileMinZoom", "MobileMaxZoom", "LinkToMarkerIndex",
+  "AnchorPositionTop", "AnchorPositionLeft",
+  "HoverTitle", "HoverTitleVisible", "HoverIconUrl", "HoverIconVersion",
+  "HoverIconWidth", "HoverIconHeight", "HoverScale",
+  "SelectedTitle", "SelectedTitleVisible", "SelectedIconUrl", "SelectedIconVersion",
+  "SelectedIconWidth", "SelectedIconHeight", "SelectedScale",
+  "Title", "TitleVisible", "IconUrl", "IconVersion", "IconWidth", "IconHeight",
+  "Version", "IsPriority", "Logo", "Layout2DId"
 ) SELECT
   '${newId}'::uuid, "Kind", "SubType",
   (SELECT COALESCE(MAX("MarkerIndex"), -1) + 1
    FROM "Markers" WHERE "Layout2DId" = '${layout2dId}'::uuid),
   "Code", "IsVisible", "IsExplorable", "NavigateTo", "IsShallowLink",
   "PositionTop" + 20, "PositionLeft" + 20, "KeepScale",
-  ${titleExpr}, "TitleVisible", ${iconExpr}, "Layout2DId"
+  "LngLatJson", "ConnectionLineJson", "Scale", "MinZoom", "MaxZoom",
+  "MobileScale", "MobileMinZoom", "MobileMaxZoom", "LinkToMarkerIndex",
+  "AnchorPositionTop", "AnchorPositionLeft",
+  "HoverTitle", "HoverTitleVisible", "HoverIconUrl", "HoverIconVersion",
+  "HoverIconWidth", "HoverIconHeight", "HoverScale",
+  "SelectedTitle", "SelectedTitleVisible", "SelectedIconUrl", "SelectedIconVersion",
+  "SelectedIconWidth", "SelectedIconHeight", "SelectedScale",
+  ${titleExpr}, "TitleVisible", ${iconExpr}, "IconVersion", "IconWidth", "IconHeight",
+  "Version", "IsPriority", "Logo", "Layout2DId"
 FROM "Markers"
 WHERE "Id" = '${sourceMarker.Id}'::uuid;`;
   } else {
@@ -543,7 +561,7 @@ function ConfirmationModal({
   isSaving,
 }: {
   positionChanges: PositionChange[];
-  newMarkers: { marker: Marker; sourceId: string; position: { top: number; left: number }; edits?: { title?: string; iconUrl?: string } }[];
+  newMarkers: { marker: Marker; sourceId: string; newId: string; position: { top: number; left: number }; edits?: { title?: string; iconUrl?: string } }[];
   editChanges: { markerId: string; marker: Marker; edits: { title?: string; iconUrl?: string } }[];
   onConfirm: () => void;
   onCancel: () => void;
@@ -558,8 +576,34 @@ function ConfirmationModal({
       const iconUrl = nm.edits?.iconUrl ?? nm.marker.IconUrl;
       const titleExpr = title ? `'${title.replace(/'/g, "''")}'` : `''`;
       const iconExpr = iconUrl ? `'${iconUrl.replace(/'/g, "''")}'` : 'NULL';
-      const newId = uuidv4();
-      parts.push(`INSERT INTO "Markers" (\n  "Id","Kind","SubType","MarkerIndex","Code","IsVisible","IsExplorable",\n  "NavigateTo","IsShallowLink","PositionTop","PositionLeft","KeepScale",\n  "Title","TitleVisible","IconUrl","Layout2DId"\n) SELECT\n  '${newId}'::uuid, "Kind","SubType",\n  (SELECT COALESCE(MAX("MarkerIndex"),-1)+1 FROM "Markers" WHERE "Layout2DId"="Layout2DId"),\n  "Code","IsVisible","IsExplorable","NavigateTo","IsShallowLink",\n  ${nm.position.top.toFixed(6)}::float8, ${nm.position.left.toFixed(6)}::float8, "KeepScale",\n  ${titleExpr}, "TitleVisible", ${iconExpr}, "Layout2DId"\nFROM "Markers"\nWHERE "Id" = '${nm.sourceId}'::uuid;`);
+      parts.push(`INSERT INTO "Markers" (
+  "Id","Kind","SubType","MarkerIndex","Code","IsVisible","IsExplorable",
+  "NavigateTo","IsShallowLink","PositionTop","PositionLeft","KeepScale",
+  "LngLatJson","ConnectionLineJson","Scale","MinZoom","MaxZoom",
+  "MobileScale","MobileMinZoom","MobileMaxZoom","LinkToMarkerIndex",
+  "AnchorPositionTop","AnchorPositionLeft",
+  "HoverTitle","HoverTitleVisible","HoverIconUrl","HoverIconVersion",
+  "HoverIconWidth","HoverIconHeight","HoverScale",
+  "SelectedTitle","SelectedTitleVisible","SelectedIconUrl","SelectedIconVersion",
+  "SelectedIconWidth","SelectedIconHeight","SelectedScale",
+  "Title","TitleVisible","IconUrl","IconVersion","IconWidth","IconHeight",
+  "Version","IsPriority","Logo","Layout2DId"
+) SELECT
+  '${nm.newId}'::uuid, "Kind","SubType",
+  (SELECT COALESCE(MAX("MarkerIndex"),-1)+1 FROM "Markers" WHERE "Layout2DId"="Layout2DId"),
+  "Code","IsVisible","IsExplorable","NavigateTo","IsShallowLink",
+  ${nm.position.top.toFixed(6)}::float8, ${nm.position.left.toFixed(6)}::float8, "KeepScale",
+  "LngLatJson","ConnectionLineJson","Scale","MinZoom","MaxZoom",
+  "MobileScale","MobileMinZoom","MobileMaxZoom","LinkToMarkerIndex",
+  "AnchorPositionTop","AnchorPositionLeft",
+  "HoverTitle","HoverTitleVisible","HoverIconUrl","HoverIconVersion",
+  "HoverIconWidth","HoverIconHeight","HoverScale",
+  "SelectedTitle","SelectedTitleVisible","SelectedIconUrl","SelectedIconVersion",
+  "SelectedIconWidth","SelectedIconHeight","SelectedScale",
+  ${titleExpr}, "TitleVisible", ${iconExpr}, "IconVersion","IconWidth","IconHeight",
+  "Version","IsPriority","Logo","Layout2DId"
+FROM "Markers"
+WHERE "Id" = '${nm.sourceId}'::uuid;`);
     });
     positionChanges.forEach((c) => {
       parts.push(`UPDATE "Markers"\n  SET "PositionTop" = ${c.newTop.toFixed(6)}::float8,\n      "PositionLeft" = ${c.newLeft.toFixed(6)}::float8\n  WHERE "Id" = '${c.markerId}'::uuid;`);
@@ -702,6 +746,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [isSavingMarker, setIsSavingMarker] = useState(false);
   const [tempMarkerIds, setTempMarkerIds] = useState<Set<string>>(new Set());
   const [replicateSources, setReplicateSources] = useState<Record<string, string>>({});
+  const [replicateNewIds, setReplicateNewIds] = useState<Record<string, string>>({});
   const [markerEdits, setMarkerEdits] = useState<Record<string, { title?: string; iconUrl?: string }>>({});
   const [deletingMarker, setDeletingMarker] = useState<Marker | null>(null);
   const [isDeletingMarker, setIsDeletingMarker] = useState(false);
@@ -816,6 +861,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            newId: replicateNewIds[tempId],
             sourceMarkerId: sourceId,
             offsetTop: top - (layout.Markers.find((m) => m.Id === sourceId)?.PositionTop ?? 0),
             offsetLeft: left - (layout.Markers.find((m) => m.Id === sourceId)?.PositionLeft ?? 0),
@@ -857,6 +903,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
       setPositionOverrides({});
       setTempMarkerIds(new Set());
       setReplicateSources({});
+      setReplicateNewIds({});
       setMarkerEdits({});
       setShowConfirmModal(false);
       setIsEditMode(false);
@@ -887,12 +934,14 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
     setPositionOverrides({});
     setTempMarkerIds(new Set());
     setReplicateSources({});
+    setReplicateNewIds({});
     setMarkerEdits({});
     setIsEditMode(false);
   };
 
   const handleReplicateMarker = (sourceMarker: Marker) => {
-    const tempId = `temp-${uuidv4()}`;
+    const newRealId = uuidv4();
+    const tempId = `temp-${newRealId}`;
     const tempMarker: Marker = {
       Id: tempId,
       Kind: sourceMarker.Kind,
@@ -918,6 +967,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
     setTempMarkerIds((prev) => new Set(prev).add(tempId));
     setReplicateSources((prev) => ({ ...prev, [tempId]: sourceMarker.Id }));
+    setReplicateNewIds((prev) => ({ ...prev, [tempId]: newRealId }));
     setSelectedMarker(tempMarker);
   };
 
@@ -1432,6 +1482,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
             return {
               marker,
               sourceId: replicateSources[tempId],
+              newId: replicateNewIds[tempId],
               position: { top: override ? override.top : marker.PositionTop, left: override ? override.left : marker.PositionLeft },
               edits: markerEdits[tempId],
             };
@@ -1471,6 +1522,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
           isSaving={isSavingMarker}
           isNew={isNewMarker}
           allIconUrls={layout2d ? Array.from(new Set(layout2d.Markers.map(m => m.IconUrl).filter((u): u is string => !!u))) : []}
+          assignedNewId={isNewMarker && editingMarker ? replicateNewIds[editingMarker.Id] : undefined}
         />
       )}
 
