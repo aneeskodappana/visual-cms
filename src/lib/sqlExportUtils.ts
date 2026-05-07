@@ -463,7 +463,7 @@ function generatePropertyFloorInsertsFromUnits(units: any[]): string {
     seen.add(pf.Id);
     rows.push([pf.Id, pf.Code, pf.Title, pf.IsVisible, pf.IsExplorable, pf.PropertyId]);
   }
-  return buildBulkInsert('PropertyFloors', columns, rows);
+  return buildBulkInsert('PropertyFloors', columns, rows, 'ON CONFLICT ("Id") DO NOTHING');
 }
 
 function generatePropertyInsertsFromUnits(units: any[]): string {
@@ -476,7 +476,7 @@ function generatePropertyInsertsFromUnits(units: any[]): string {
     seen.add(prop.Id);
     rows.push([prop.Id, prop.Code, prop.Title, prop.IsVisible, prop.IsExplorable, prop.CommunityName, prop.ClusterId]);
   }
-  return buildBulkInsert('Properties', columns, rows);
+  return buildBulkInsert('Properties', columns, rows, 'ON CONFLICT ("Id") DO NOTHING');
 }
 
 export function generateUnitInsertSql(selectedUnits: any[]): string {
