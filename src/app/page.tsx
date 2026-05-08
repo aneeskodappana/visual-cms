@@ -57,6 +57,12 @@ export default function Home() {
                 YasParkPlace
               </a>
               <a
+                href="/sql-editor"
+                className="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 transition-colors text-sm font-medium"
+              >
+                SQL Query Value Editor
+              </a>
+              <a
                 href="/api/db-test"
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
               >
