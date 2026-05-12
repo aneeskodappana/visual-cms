@@ -67,6 +67,11 @@ export interface WebApp3DViewerProps {
   positionOverrides?: Record<string, Vector3Like>;
   offsetRotationOverrides?: Record<string, RotationLike>;
   defaultCameraRotationOverrides?: Record<string, RotationLike>;
+  cameraPreviewRequest?: {
+    hotspotId: string;
+    rotation: RotationLike;
+    version: number;
+  } | null;
   modelScale?: Vector3Like;
   requestedGroupId?: string | null;
   onHotspotSelect?: (hotspot: NormalizedHotspot) => void;
@@ -114,6 +119,29 @@ function resolveLayoutWithOverrides(
       })),
     })),
   };
+}
+
+function resolveTransitionHotspot(
+  layout: NormalizedLayout3D,
+  transitionHotspot: TransitionHotspot | undefined
+) {
+  if (!transitionHotspot) return undefined;
+
+  const resolvedGroup =
+    layout.hotspotGroups.find((group) => group.id === transitionHotspot.hotspotGroupId) ??
+    layout.hotspotGroups.find((group) => group.name === transitionHotspot.hotspotGroupName) ??
+    null;
+
+  const resolvedHotspot =
+    resolvedGroup?.hotspots.find((hotspot) => hotspot.id === transitionHotspot.hotspot.id) ??
+    layout.hotspotGroups.flatMap((group) => group.hotspots).find((hotspot) => hotspot.id === transitionHotspot.hotspot.id) ??
+    transitionHotspot.hotspot;
+
+  return {
+    hotspot: resolvedHotspot,
+    hotspotGroupId: resolvedGroup?.id ?? transitionHotspot.hotspotGroupId,
+    hotspotGroupName: resolvedGroup?.name ?? transitionHotspot.hotspotGroupName,
+  } satisfies TransitionHotspot;
 }
 
 function TransitionProvider({
@@ -193,7 +221,7 @@ function TransitionProvider({
   return <TransitionContext.Provider value={value}>{children}</TransitionContext.Provider>;
 }
 
-function CameraControls({ enabled = true }: { enabled?: boolean }) {
+function CameraControls({ enabled = true, resetToken = 0 }: { enabled?: boolean; resetToken?: number }) {
   const { camera, gl } = useThree();
   const rotateDelta = useRef(new Vector2(0, 0));
   const rotateStart = useRef(new Vector2(0, 0));
@@ -219,7 +247,7 @@ function CameraControls({ enabled = true }: { enabled?: boolean }) {
 
   useEffect(() => {
     setInitialValues();
-  }, [setInitialValues]);
+  }, [resetToken, setInitialValues]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -825,6 +853,14 @@ function ProjectionModel({
 }) {
   const { gl } = useThree();
   const transition = useTransitionContext();
+  const resolvedFromHotspot = useMemo(
+    () => resolveTransitionHotspot(layout, transition.fromHotspot),
+    [layout, transition.fromHotspot]
+  );
+  const resolvedToHotspot = useMemo(
+    () => resolveTransitionHotspot(layout, transition.toHotspot),
+    [layout, transition.toHotspot]
+  );
   const modelUrl = resolveModelUrl(layout.modelUrl, cdnBaseUrl);
   const gltf = useLoader(
     GLTFLoader,
@@ -939,53 +975,53 @@ function ProjectionModel({
   }, [applyMaterial]);
 
   useEffect(() => {
-    if (!transition.toHotspot) return;
+    if (!resolvedToHotspot) return;
 
     if (
       !transition.inProgress ||
-      !transition.fromHotspot ||
-      transition.fromHotspot.hotspot.id === transition.toHotspot.hotspot.id
+      !resolvedFromHotspot ||
+      resolvedFromHotspot.hotspot.id === resolvedToHotspot.hotspot.id
     ) {
-      loadTexture(transition.toHotspot.hotspot.mediaUrl, 1);
-      loadTexture(transition.toHotspot.hotspot.mediaUrl, 2);
+      loadTexture(resolvedToHotspot.hotspot.mediaUrl, 1);
+      loadTexture(resolvedToHotspot.hotspot.mediaUrl, 2);
       setBlendMaterialTextureProperties(
         new Vector3(
-          transition.toHotspot.hotspot.position.x,
-          transition.toHotspot.hotspot.position.y,
-          transition.toHotspot.hotspot.position.z
+          resolvedToHotspot.hotspot.position.x,
+          resolvedToHotspot.hotspot.position.y,
+          resolvedToHotspot.hotspot.position.z
         ),
-        transition.toHotspot.hotspot.offsetRotation.y,
+        resolvedToHotspot.hotspot.offsetRotation.y,
         3
       );
       applyMaterial(blendMaterial.current);
       return;
     }
 
-    loadTexture(transition.fromHotspot.hotspot.mediaUrl, 1);
-    loadTexture(transition.toHotspot.hotspot.mediaUrl, 2);
+    loadTexture(resolvedFromHotspot.hotspot.mediaUrl, 1);
+    loadTexture(resolvedToHotspot.hotspot.mediaUrl, 2);
 
     setBlendMaterialTextureProperties(
       new Vector3(
-        transition.fromHotspot.hotspot.position.x,
-        transition.fromHotspot.hotspot.position.y,
-        transition.fromHotspot.hotspot.position.z
+        resolvedFromHotspot.hotspot.position.x,
+        resolvedFromHotspot.hotspot.position.y,
+        resolvedFromHotspot.hotspot.position.z
       ),
-      transition.fromHotspot.hotspot.offsetRotation.y,
+      resolvedFromHotspot.hotspot.offsetRotation.y,
       1
     );
 
     setBlendMaterialTextureProperties(
       new Vector3(
-        transition.toHotspot.hotspot.position.x,
-        transition.toHotspot.hotspot.position.y,
-        transition.toHotspot.hotspot.position.z
+        resolvedToHotspot.hotspot.position.x,
+        resolvedToHotspot.hotspot.position.y,
+        resolvedToHotspot.hotspot.position.z
       ),
-      transition.toHotspot.hotspot.offsetRotation.y,
+      resolvedToHotspot.hotspot.offsetRotation.y,
       2
     );
 
     applyMaterial(blendMaterial.current);
-  }, [applyMaterial, loadTexture, setBlendMaterialTextureProperties, transition.fromHotspot, transition.inProgress, transition.toHotspot]);
+  }, [applyMaterial, loadTexture, resolvedFromHotspot, resolvedToHotspot, setBlendMaterialTextureProperties, transition.inProgress]);
 
   useEffect(() => {
     blendMaterial.current.uniforms.blendAmount.value = transition.inProgress ? transition.progress : 1;
@@ -1002,25 +1038,31 @@ function ProjectionModel({
 }
 
 function TransitionTweener({
+  layout,
   onTransitionComplete,
 }: {
+  layout: NormalizedLayout3D;
   onTransitionComplete?: (hotspot: TransitionHotspot) => void;
 }) {
   const { camera } = useThree();
   const transition = useTransitionContext();
+  const resolvedToHotspot = useMemo(
+    () => resolveTransitionHotspot(layout, transition.toHotspot),
+    [layout, transition.toHotspot]
+  );
   const startPositionRef = useRef(new Vector3());
   const endPositionRef = useRef(new Vector3());
   const elapsedRef = useRef(0);
   const durationRef = useRef(0.5);
 
   useEffect(() => {
-    if (!transition.inProgress || !transition.fromHotspot || !transition.toHotspot) return;
+    if (!transition.inProgress || !transition.fromHotspot || !resolvedToHotspot) return;
 
     startPositionRef.current = camera.position.clone();
     endPositionRef.current = new Vector3(
-      transition.toHotspot.hotspot.position.x,
-      transition.toHotspot.hotspot.position.y,
-      transition.toHotspot.hotspot.position.z
+      resolvedToHotspot.hotspot.position.x,
+      resolvedToHotspot.hotspot.position.y,
+      resolvedToHotspot.hotspot.position.z
     ).multiplyScalar(10);
     elapsedRef.current = 0;
 
@@ -1033,7 +1075,7 @@ function TransitionTweener({
     const computedMilliseconds = distance / (2.2 * Math.max(Math.log10(Math.max(distance, 10)), 1) * 0.01);
     const computedSeconds = computedMilliseconds / 1000;
     durationRef.current = !computedSeconds || computedSeconds < 0.6 ? 0.6 : computedSeconds;
-  }, [camera.position, transition.fromHotspot, transition.inProgress, transition.toHotspot]);
+  }, [camera.position, resolvedToHotspot, transition.fromHotspot, transition.inProgress]);
 
   useFrame((_, delta) => {
     if (!transition.inProgress || !transition.toHotspot) return;
@@ -1062,6 +1104,7 @@ function SceneContent({
   editMode,
   selectedHotspotId,
   positionOverrides,
+  cameraPreviewRequest,
   modelScale,
   requestedGroupId,
   onHotspotSelect,
@@ -1073,6 +1116,11 @@ function SceneContent({
   editMode: boolean;
   selectedHotspotId?: string | null;
   positionOverrides: Record<string, Vector3Like>;
+  cameraPreviewRequest?: {
+    hotspotId: string;
+    rotation: RotationLike;
+    version: number;
+  } | null;
   modelScale: Vector3Like;
   requestedGroupId?: string | null;
   onHotspotSelect?: (hotspot: NormalizedHotspot) => void;
@@ -1084,8 +1132,29 @@ function SceneContent({
   const currentRaycastPositionRef = useRef<Vector3 | undefined>(undefined);
   const lastHandledRequestedGroupIdRef = useRef<string | null>(null);
   const [isDraggingHotspot, setIsDraggingHotspot] = useState(false);
+  const [cameraControlsResetToken, setCameraControlsResetToken] = useState(0);
   const defaultGroup = useMemo(() => getDefaultGroup(layout), [layout]);
   const defaultHotspot = useMemo(() => getDefaultHotspot(layout), [layout]);
+
+  useEffect(() => {
+    if (!editMode || !cameraPreviewRequest) return;
+
+    const rotation = cameraPreviewRequest.rotation;
+    const rotationX = MathUtils.degToRad(rotation.x);
+    const rotationY = MathUtils.degToRad(rotation.y);
+    const rotationZ = MathUtils.degToRad(rotation.z);
+
+    camera.rotation.set(rotationX, rotationY, rotationZ);
+
+    const phi = Math.PI / 2 - rotationX;
+    const theta = -rotationY + Math.PI;
+    const targetPosition = new Vector3(0, 0, 0)
+      .setFromSphericalCoords(1, phi, theta)
+      .add(camera.position);
+
+    camera.lookAt(targetPosition);
+    setCameraControlsResetToken((current) => current + 1);
+  }, [camera, cameraPreviewRequest, editMode]);
 
   useEffect(() => {
     if (!defaultGroup || !defaultHotspot) return;
@@ -1136,7 +1205,7 @@ function SceneContent({
   return (
     <>
       <ProjectionModel layout={layout} cdnBaseUrl={cdnBaseUrl} modelScale={modelScale} />
-      <CameraControls enabled={!isDraggingHotspot} />
+      <CameraControls enabled={!isDraggingHotspot} resetToken={cameraControlsResetToken} />
       <CameraPointer currentRaycastPositionRef={currentRaycastPositionRef} />
       <HotspotsRenderer
         layout={layout}
@@ -1149,7 +1218,7 @@ function SceneContent({
         onHotspotDrag={onHotspotDrag}
         onDraggingChange={setIsDraggingHotspot}
       />
-      <TransitionTweener onTransitionComplete={(hotspot) => onActiveGroupChange?.(hotspot.hotspotGroupId)} />
+      <TransitionTweener layout={layout} onTransitionComplete={(hotspot) => onActiveGroupChange?.(hotspot.hotspotGroupId)} />
     </>
   );
 }
@@ -1162,6 +1231,7 @@ export default function WebApp3DViewer({
   positionOverrides = {},
   offsetRotationOverrides = {},
   defaultCameraRotationOverrides = {},
+  cameraPreviewRequest,
   modelScale,
   requestedGroupId,
   onHotspotSelect,
@@ -1223,6 +1293,7 @@ export default function WebApp3DViewer({
               editMode={editMode}
               selectedHotspotId={selectedHotspotId}
               positionOverrides={positionOverrides}
+              cameraPreviewRequest={cameraPreviewRequest}
               modelScale={viewerScale}
               requestedGroupId={requestedGroupId}
               onHotspotSelect={onHotspotSelect}

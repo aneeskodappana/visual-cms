@@ -55,6 +55,7 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
   const [offsetRotationOverrides, setOffsetRotationOverrides] = useState<Record<string, RotationLike>>({});
   const [defaultCameraRotationOverrides, setDefaultCameraRotationOverrides] = useState<Record<string, RotationLike>>({});
   const [selectedHotspotTab, setSelectedHotspotTab] = useState<HotspotEditTab>('position');
+  const [cameraPreviewRequest, setCameraPreviewRequest] = useState<WebApp3DViewerProps['cameraPreviewRequest']>(null);
   const [modelScale, setModelScale] = useState<Vector3Like>({ x: 10, y: 10, z: 10 });
   const [savedModelScale, setSavedModelScale] = useState<Vector3Like>({ x: 10, y: 10, z: 10 });
   const [requestedGroupId, setRequestedGroupId] = useState<string | null>(null);
@@ -203,6 +204,18 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
     setCopiedSql(true);
     window.setTimeout(() => setCopiedSql(false), 1500);
   }, [selectedHotspot]);
+
+  const handlePreviewSelectedHotspotCamera = useCallback(() => {
+    if (!selectedHotspot) return;
+
+    const previewRotation = defaultCameraRotationOverrides[selectedHotspot.id] ?? selectedHotspot.defaultCameraRotation;
+
+    setCameraPreviewRequest((current) => ({
+      hotspotId: selectedHotspot.id,
+      rotation: previewRotation,
+      version: (current?.version ?? 0) + 1,
+    }));
+  }, [defaultCameraRotationOverrides, selectedHotspot]);
 
   const handleCancel = useCallback(() => {
     setPositionOverrides({});
@@ -455,6 +468,7 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
           positionOverrides={positionOverrides}
           offsetRotationOverrides={offsetRotationOverrides}
           defaultCameraRotationOverrides={defaultCameraRotationOverrides}
+          cameraPreviewRequest={cameraPreviewRequest}
           modelScale={modelScale}
           requestedGroupId={requestedGroupId}
           onHotspotSelect={handleHotspotSelect}
@@ -465,9 +479,7 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
         <div className="absolute left-4 top-4 w-80 rounded-xl border border-gray-800 bg-black/65 p-4 text-xs text-gray-200 backdrop-blur">
           <div className="mb-3">
             <p className="text-sm font-semibold text-white">WebApp-style 3D Experiment</p>
-            <p className="mt-1 text-gray-400">
-              This viewer uses projected GLB rendering and walkable hotspot transitions modeled after the WebApp interior viewer.
-            </p>
+            
           </div>
 
           <div className="space-y-2">
@@ -491,7 +503,6 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
           {isEditMode ? (
             <div className="mt-4 border-t border-gray-800 pt-4">
               <p className="font-medium text-white">Edit Controls</p>
-              <p className="mt-1 text-gray-400">Select a hotspot, then drag it on the model or fine-tune its coordinates below. Adjust model scale below.</p>
 
               <div className="mt-4 space-y-2">
                 <label className="block space-y-1">
@@ -555,6 +566,17 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
                       );
                     })}
                   </div>
+                  {selectedHotspotTab === 'defaultCameraRotation' ? (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={handlePreviewSelectedHotspotCamera}
+                        className="inline-flex items-center gap-1 rounded bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-blue-500"
+                      >
+                        Preview Camera
+                      </button>
+                    </div>
+                  ) : null}
                   {selectedTabValues ? (
                     <>
                       <p className="mt-2 font-mono text-[11px] text-gray-400">
@@ -596,9 +618,7 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
               )}
             </div>
           ) : (
-            <div className="mt-4 border-t border-gray-800 pt-4 text-gray-400">
-              Click a visible hotspot on the surface to walk to that room, or use the room buttons above.
-            </div>
+            <></>
           )}
         </div>
       </div>
