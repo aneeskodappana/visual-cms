@@ -39,6 +39,12 @@ export default function Home() {
                 ViewConfig Search
               </a>
               <a
+                href="/viewconfig-url"
+                className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors text-sm font-medium"
+              >
+                ViewConfig URL Resolver
+              </a>
+              <a
                 href="/unit-search"
                 className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors text-sm font-medium"
               >

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
+import { viewConfigDetailInclude } from '@/lib/viewConfigUtils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,43 +58,7 @@ export async function GET(request: NextRequest) {
       results = await prisma.viewConfig.findMany({
         where: buildCodeWhere(),
         take: limit,
-        include: {
-          Layout3D: {
-            include: {
-              HotspotGroup: {
-                include: {
-                  Hotspots: true,
-                },
-              },
-              FromTransitions: true,
-              ToTransitions: true,
-            },
-          },
-          Layout2Ds: {
-            include: {
-              Backplates: true,
-              Overlays: true,
-              GeoLayers: true,
-              Markers: true,
-              FromTransitions: true,
-              ToTransitions: true,
-            },
-          },
-          Navigations: true,
-          GalleryItems: true,
-          Nation: true,
-          City: true,
-          Project: true,
-          Cluster: true,
-          Amenity: true,
-          Unit: true,
-          UnitVariantExterior: true,
-          UnitVariantFloor: true,
-          UnitVariantInterior: true,
-          ParkingFloorplan: true,
-          ParkingUpgrade: true,
-          ParkingUpgradeGallery: true,
-        },
+        include: viewConfigDetailInclude,
       });
     }
 
@@ -117,43 +82,7 @@ export async function GET(request: NextRequest) {
       const uuidResults = await prisma.viewConfig.findMany({
         where,
         take: limit,
-        include: {
-          Layout3D: {
-            include: {
-              HotspotGroup: {
-                include: {
-                  Hotspots: true,
-                },
-              },
-              FromTransitions: true,
-              ToTransitions: true,
-            },
-          },
-          Layout2Ds: {
-            include: {
-              Backplates: true,
-              Overlays: true,
-              GeoLayers: true,
-              Markers: true,
-              FromTransitions: true,
-              ToTransitions: true,
-            },
-          },
-          Navigations: true,
-          GalleryItems: true,
-          Nation: true,
-          City: true,
-          Project: true,
-          Cluster: true,
-          Amenity: true,
-          Unit: true,
-          UnitVariantExterior: true,
-          UnitVariantFloor: true,
-          UnitVariantInterior: true,
-          ParkingFloorplan: true,
-          ParkingUpgrade: true,
-          ParkingUpgradeGallery: true,
-        },
+        include: viewConfigDetailInclude,
       });
 
       if (codeQuery) {
