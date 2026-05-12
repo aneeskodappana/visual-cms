@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ExternalLink, Info, Pencil, Save, X } from 'lucide-react';
+import { ChevronLeft, Copy, ExternalLink, Info, Pencil, Save, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { NormalizedHotspot, Vector3Like, ViewConfig3DData } from '@/components/web-app-3d/types';
+import { NormalizedHotspot, RotationLike, Vector3Like, ViewConfig3DData } from '@/components/web-app-3d/types';
 import type { WebApp3DViewerProps } from '@/components/web-app-3d/WebApp3DViewer';
 import { getDefaultGroup, normalizeLayout3D } from '@/components/web-app-3d/utils';
 
@@ -35,6 +35,14 @@ const areVectorsEqual = (left: Vector3Like, right: Vector3Like) => {
   );
 };
 
+const HOTSPOT_EDIT_TABS = [
+  { id: 'position', label: 'Position' },
+  { id: 'offsetRotation', label: 'Offset Rotation' },
+  { id: 'defaultCameraRotation', label: 'Default Camera' },
+] as const;
+
+type HotspotEditTab = (typeof HOTSPOT_EDIT_TABS)[number]['id'];
+
 export default function WebApp3DPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [viewConfig, setViewConfig] = useState<ViewConfig3DData | null>(null);
@@ -44,11 +52,15 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedHotspotId, setSelectedHotspotId] = useState<string | null>(null);
   const [positionOverrides, setPositionOverrides] = useState<Record<string, Vector3Like>>({});
+  const [offsetRotationOverrides, setOffsetRotationOverrides] = useState<Record<string, RotationLike>>({});
+  const [defaultCameraRotationOverrides, setDefaultCameraRotationOverrides] = useState<Record<string, RotationLike>>({});
+  const [selectedHotspotTab, setSelectedHotspotTab] = useState<HotspotEditTab>('position');
   const [modelScale, setModelScale] = useState<Vector3Like>({ x: 10, y: 10, z: 10 });
   const [savedModelScale, setSavedModelScale] = useState<Vector3Like>({ x: 10, y: 10, z: 10 });
   const [requestedGroupId, setRequestedGroupId] = useState<string | null>(null);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -102,7 +114,15 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
     [allHotspots, selectedHotspotId]
   );
 
-  const changedHotspotCount = Object.keys(positionOverrides).length;
+  const changedHotspotIds = useMemo(
+    () => Array.from(new Set([
+      ...Object.keys(positionOverrides),
+      ...Object.keys(offsetRotationOverrides),
+      ...Object.keys(defaultCameraRotationOverrides),
+    ])),
+    [defaultCameraRotationOverrides, offsetRotationOverrides, positionOverrides]
+  );
+  const changedHotspotCount = changedHotspotIds.length;
   const scaleChanged = !areVectorsEqual(modelScale, savedModelScale);
   const hasChanges = changedHotspotCount > 0 || scaleChanged;
 
@@ -117,6 +137,56 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
     }));
   }, []);
 
+  const handleSelectedHotspotPositionChange = useCallback(
+    (axis: keyof Vector3Like, value: string) => {
+      if (!selectedHotspot) return;
+
+      const parsed = Number(value);
+      const safeValue = Number.isFinite(parsed) ? parsed : 0;
+      const currentPosition = positionOverrides[selectedHotspot.id] ?? selectedHotspot.position;
+
+      setPositionOverrides((current) => ({
+        ...current,
+        [selectedHotspot.id]: roundVector({
+          ...currentPosition,
+          [axis]: safeValue,
+        }),
+      }));
+    },
+    [positionOverrides, selectedHotspot]
+  );
+
+  const handleSelectedHotspotRotationChange = useCallback(
+    (type: 'offsetRotation' | 'defaultCameraRotation', axis: keyof RotationLike, value: string) => {
+      if (!selectedHotspot) return;
+
+      const parsed = Number(value);
+      const safeValue = Number.isFinite(parsed) ? parsed : 0;
+
+      if (type === 'offsetRotation') {
+        const currentRotation = offsetRotationOverrides[selectedHotspot.id] ?? selectedHotspot.offsetRotation;
+        setOffsetRotationOverrides((current) => ({
+          ...current,
+          [selectedHotspot.id]: roundVector({
+            ...currentRotation,
+            [axis]: safeValue,
+          }),
+        }));
+        return;
+      }
+
+      const currentRotation = defaultCameraRotationOverrides[selectedHotspot.id] ?? selectedHotspot.defaultCameraRotation;
+      setDefaultCameraRotationOverrides((current) => ({
+        ...current,
+        [selectedHotspot.id]: roundVector({
+          ...currentRotation,
+          [axis]: safeValue,
+        }),
+      }));
+    },
+    [defaultCameraRotationOverrides, offsetRotationOverrides, selectedHotspot]
+  );
+
   const handleScaleChange = useCallback((axis: keyof Vector3Like, value: string) => {
     const parsed = Number(value);
     setModelScale((current) => ({
@@ -125,10 +195,22 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
     }));
   }, []);
 
+  const handleCopySelectedHotspotSql = useCallback(async () => {
+    if (!selectedHotspot) return;
+
+    const sql = `SELECT * FROM "Hotspots" WHERE "Id" = '${selectedHotspot.id}';`;
+    await navigator.clipboard.writeText(sql);
+    setCopiedSql(true);
+    window.setTimeout(() => setCopiedSql(false), 1500);
+  }, [selectedHotspot]);
+
   const handleCancel = useCallback(() => {
     setPositionOverrides({});
+    setOffsetRotationOverrides({});
+    setDefaultCameraRotationOverrides({});
     setModelScale(savedModelScale);
     setSelectedHotspotId(null);
+    setSelectedHotspotTab('position');
     setIsEditMode(false);
   }, [savedModelScale]);
 
@@ -137,10 +219,30 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
 
     setIsSaving(true);
     try {
-      const hotspotUpdates = Object.entries(positionOverrides).map(([id, position]) => ({
-        id,
-        positionJson: JSON.stringify(roundVector(position)),
-      }));
+      const hotspotUpdates = changedHotspotIds.map((id) => {
+        const update: {
+          id: string;
+          positionJson?: string;
+          offsetRotationJson?: string;
+          defaultCameraRotationJson?: string;
+        } = { id };
+
+        const position = positionOverrides[id];
+        const offsetRotation = offsetRotationOverrides[id];
+        const defaultCameraRotation = defaultCameraRotationOverrides[id];
+
+        if (position) {
+          update.positionJson = JSON.stringify(roundVector(position));
+        }
+        if (offsetRotation) {
+          update.offsetRotationJson = JSON.stringify(roundVector(offsetRotation));
+        }
+        if (defaultCameraRotation) {
+          update.defaultCameraRotationJson = JSON.stringify(roundVector(defaultCameraRotation));
+        }
+
+        return update;
+      });
 
       if (hotspotUpdates.length > 0) {
         const response = await fetch('/api/viewconfig/hotspots', {
@@ -179,11 +281,19 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
             HotspotGroup: current.Layout3D.HotspotGroup.map((group) => ({
               ...group,
               Hotspots: group.Hotspots.map((hotspot) => {
-                const override = positionOverrides[hotspot.Id];
-                if (!override) return hotspot;
+                const positionOverride = positionOverrides[hotspot.Id];
+                const offsetRotationOverride = offsetRotationOverrides[hotspot.Id];
+                const defaultCameraRotationOverride = defaultCameraRotationOverrides[hotspot.Id];
+
+                if (!positionOverride && !offsetRotationOverride && !defaultCameraRotationOverride) {
+                  return hotspot;
+                }
+
                 return {
                   ...hotspot,
-                  PositionJson: JSON.stringify(roundVector(override)),
+                  PositionJson: positionOverride ? JSON.stringify(roundVector(positionOverride)) : hotspot.PositionJson,
+                  OffsetRotationJson: offsetRotationOverride ? JSON.stringify(roundVector(offsetRotationOverride)) : hotspot.OffsetRotationJson,
+                  DefaultCameraRotationJson: defaultCameraRotationOverride ? JSON.stringify(roundVector(defaultCameraRotationOverride)) : hotspot.DefaultCameraRotationJson,
                 };
               }),
             })),
@@ -193,14 +303,17 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
 
       setSavedModelScale(roundVector(modelScale));
       setPositionOverrides({});
+      setOffsetRotationOverrides({});
+      setDefaultCameraRotationOverrides({});
       setSelectedHotspotId(null);
+      setSelectedHotspotTab('position');
       setIsEditMode(false);
     } catch (saveError) {
       alert(saveError instanceof Error ? saveError.message : 'Failed to save changes');
     } finally {
       setIsSaving(false);
     }
-  }, [hasChanges, modelScale, positionOverrides, scaleChanged, viewConfig]);
+  }, [changedHotspotIds, defaultCameraRotationOverrides, hasChanges, modelScale, offsetRotationOverrides, positionOverrides, scaleChanged, viewConfig]);
 
   if (loading) {
     return (
@@ -226,6 +339,20 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
   const selectedHotspotPosition = selectedHotspot
     ? positionOverrides[selectedHotspot.id] ?? selectedHotspot.position
     : null;
+
+  const selectedHotspotOffsetRotation = selectedHotspot
+    ? offsetRotationOverrides[selectedHotspot.id] ?? selectedHotspot.offsetRotation
+    : null;
+
+  const selectedHotspotDefaultCameraRotation = selectedHotspot
+    ? defaultCameraRotationOverrides[selectedHotspot.id] ?? selectedHotspot.defaultCameraRotation
+    : null;
+
+  const selectedTabValues = selectedHotspotTab === 'position'
+    ? selectedHotspotPosition
+    : selectedHotspotTab === 'offsetRotation'
+      ? selectedHotspotOffsetRotation
+      : selectedHotspotDefaultCameraRotation;
 
   return (
     <div className="flex h-screen flex-col bg-gray-950 text-white">
@@ -326,6 +453,8 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
           editMode={isEditMode}
           selectedHotspotId={selectedHotspotId}
           positionOverrides={positionOverrides}
+          offsetRotationOverrides={offsetRotationOverrides}
+          defaultCameraRotationOverrides={defaultCameraRotationOverrides}
           modelScale={modelScale}
           requestedGroupId={requestedGroupId}
           onHotspotSelect={handleHotspotSelect}
@@ -362,7 +491,25 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
           {isEditMode ? (
             <div className="mt-4 border-t border-gray-800 pt-4">
               <p className="font-medium text-white">Edit Controls</p>
-              <p className="mt-1 text-gray-400">Drag hotspots on the model to update their projected walk positions. Adjust model scale below.</p>
+              <p className="mt-1 text-gray-400">Select a hotspot, then drag it on the model or fine-tune its coordinates below. Adjust model scale below.</p>
+
+              <div className="mt-4 space-y-2">
+                <label className="block space-y-1">
+                  <span className="text-[11px] uppercase text-gray-500">Selected Hotspot</span>
+                  <select
+                    value={selectedHotspotId ?? ''}
+                    onChange={(event) => setSelectedHotspotId(event.target.value || null)}
+                    className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-2 text-white outline-none focus:border-blue-500"
+                  >
+                    <option value="">Choose a hotspot</option>
+                    {allHotspots.map((hotspot) => (
+                      <option key={hotspot.id} value={hotspot.id}>
+                        {hotspot.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {(['x', 'y', 'z'] as Array<keyof Vector3Like>).map((axis) => (
@@ -381,18 +528,71 @@ export default function WebApp3DPage({ params }: { params: { id: string } }) {
 
               {selectedHotspot ? (
                 <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900/70 p-3">
-                  <p className="font-medium text-blue-300">Selected Hotspot</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-blue-300">Selected Hotspot</p>
+                    <button
+                      type="button"
+                      onClick={handleCopySelectedHotspotSql}
+                      className="inline-flex items-center gap-1 rounded border border-gray-700 bg-gray-950 px-2 py-1 text-[11px] text-gray-200 transition-colors hover:border-blue-500 hover:text-white"
+                    >
+                      <Copy size={12} />
+                      {copiedSql ? 'Copied SQL' : 'Copy SQL'}
+                    </button>
+                  </div>
                   <p className="mt-1 text-sm text-white">{selectedHotspot.name}</p>
-                  {selectedHotspotPosition ? (
-                    <p className="mt-2 font-mono text-[11px] text-gray-400">
-                      x: {selectedHotspotPosition.x.toFixed(4)}<br />
-                      y: {selectedHotspotPosition.y.toFixed(4)}<br />
-                      z: {selectedHotspotPosition.z.toFixed(4)}
-                    </p>
+                  <div className="mt-3 flex gap-2">
+                    {HOTSPOT_EDIT_TABS.map((tab) => {
+                      const isActive = selectedHotspotTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setSelectedHotspotTab(tab.id)}
+                          className={`rounded px-2 py-1 text-[11px] transition-colors ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedTabValues ? (
+                    <>
+                      <p className="mt-2 font-mono text-[11px] text-gray-400">
+                        x: {selectedTabValues.x.toFixed(4)}<br />
+                        y: {selectedTabValues.y.toFixed(4)}<br />
+                        z: {selectedTabValues.z.toFixed(4)}
+                      </p>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {(['x', 'y', 'z'] as Array<keyof Vector3Like>).map((axis) => (
+                          <label key={axis} className="space-y-1">
+                            <span className="text-[11px] uppercase text-gray-500">{axis}</span>
+                            <input
+                              type="number"
+                              step={selectedHotspotTab === 'position' ? '0.1' : '1'}
+                              value={selectedTabValues[axis]}
+                              onChange={(event) => {
+                                if (selectedHotspotTab === 'position') {
+                                  handleSelectedHotspotPositionChange(axis, event.target.value);
+                                  return;
+                                }
+
+                                handleSelectedHotspotRotationChange(
+                                  selectedHotspotTab === 'offsetRotation' ? 'offsetRotation' : 'defaultCameraRotation',
+                                  axis,
+                                  event.target.value
+                                );
+                              }}
+                              className="w-full rounded border border-gray-700 bg-gray-950 px-2 py-1.5 text-white outline-none focus:border-blue-500"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </>
                   ) : null}
                 </div>
               ) : (
-                <p className="mt-3 text-gray-500">Click a hotspot to inspect it, then drag it to change position.</p>
+                <p className="mt-3 text-gray-500">Choose or click a hotspot, then edit its Position, Offset Rotation, or Default Camera values in the tabs above.</p>
               )}
             </div>
           ) : (

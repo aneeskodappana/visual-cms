@@ -45,6 +45,7 @@ import {
   NormalizedHotspot,
   NormalizedHotspotGroup,
   NormalizedLayout3D,
+  RotationLike,
   TransitionHotspot,
   Vector3Like,
 } from './types';
@@ -64,6 +65,8 @@ export interface WebApp3DViewerProps {
   editMode?: boolean;
   selectedHotspotId?: string | null;
   positionOverrides?: Record<string, Vector3Like>;
+  offsetRotationOverrides?: Record<string, RotationLike>;
+  defaultCameraRotationOverrides?: Record<string, RotationLike>;
   modelScale?: Vector3Like;
   requestedGroupId?: string | null;
   onHotspotSelect?: (hotspot: NormalizedHotspot) => void;
@@ -91,6 +94,26 @@ function useTransitionContext() {
     throw new Error('TransitionContext is not available');
   }
   return context;
+}
+
+function resolveLayoutWithOverrides(
+  layout: NormalizedLayout3D,
+  positionOverrides: Record<string, Vector3Like>,
+  offsetRotationOverrides: Record<string, RotationLike>,
+  defaultCameraRotationOverrides: Record<string, RotationLike>
+): NormalizedLayout3D {
+  return {
+    ...layout,
+    hotspotGroups: layout.hotspotGroups.map((group) => ({
+      ...group,
+      hotspots: group.hotspots.map((hotspot) => ({
+        ...hotspot,
+        position: positionOverrides[hotspot.id] ?? hotspot.position,
+        offsetRotation: offsetRotationOverrides[hotspot.id] ?? hotspot.offsetRotation,
+        defaultCameraRotation: defaultCameraRotationOverrides[hotspot.id] ?? hotspot.defaultCameraRotation,
+      })),
+    })),
+  };
 }
 
 function TransitionProvider({
@@ -1137,13 +1160,23 @@ export default function WebApp3DViewer({
   editMode = false,
   selectedHotspotId,
   positionOverrides = {},
+  offsetRotationOverrides = {},
+  defaultCameraRotationOverrides = {},
   modelScale,
   requestedGroupId,
   onHotspotSelect,
   onHotspotDrag,
   onActiveGroupChange,
 }: WebApp3DViewerProps) {
-  const layout = useMemo(() => normalizeLayout3D(layout3D), [layout3D]);
+  const layout = useMemo(
+    () => resolveLayoutWithOverrides(
+      normalizeLayout3D(layout3D),
+      positionOverrides,
+      offsetRotationOverrides,
+      defaultCameraRotationOverrides
+    ),
+    [defaultCameraRotationOverrides, layout3D, offsetRotationOverrides, positionOverrides]
+  );
   const defaultHotspot = useMemo(() => getDefaultHotspot(layout), [layout]);
   const viewerScale = modelScale ?? layout.modelScale;
 
