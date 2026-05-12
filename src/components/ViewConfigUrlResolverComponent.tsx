@@ -395,12 +395,20 @@ export function ViewConfigUrlResolverComponent() {
                       Open ViewConfig <ExternalLink size={14} />
                     </Link>
                     {result.Layout3D && (
-                      <Link
-                        href={`/viewconfig/${result.Id}/layout3d`}
-                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
-                      >
-                        Open Layout3D <ExternalLink size={14} />
-                      </Link>
+                      <>
+                        <Link
+                          href={`/viewconfig/${result.Id}/layout3d`}
+                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800"
+                        >
+                          Open Layout3D <ExternalLink size={14} />
+                        </Link>
+                        <Link
+                          href={`/viewconfig/${result.Id}/web-app-3d`}
+                          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500"
+                        >
+                          Open Web App 3D <ExternalLink size={14} />
+                        </Link>
+                      </>
                     )}
                     <button
                       type="button"

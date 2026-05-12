@@ -824,13 +824,22 @@ export function ViewConfigSearchComponent() {
                       </Link>
                     )}
                     {result.Layout3D && (
-                      <Link
-                        href={`/viewconfig/${result.Id}/layout3d`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="px-3 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium hover:bg-purple-200 transition-colors"
-                      >
-                        View Layout 3D
-                      </Link>
+                      <>
+                        <Link
+                          href={`/viewconfig/${result.Id}/layout3d`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-3 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium hover:bg-purple-200 transition-colors"
+                        >
+                          View Layout 3D
+                        </Link>
+                        <Link
+                          href={`/viewconfig/${result.Id}/web-app-3d`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded text-xs font-medium hover:bg-indigo-200 transition-colors"
+                        >
+                          Web App 3D
+                        </Link>
+                      </>
                     )}
                     {result.HasGallery && (
                       <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
