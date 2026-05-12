@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Search, Copy, Check, ExternalLink } from 'lucide-react';
 import { constructCdnUrl, getViewTypeName } from '@/lib/cdnUtils';
+import { OpenSeadragonPreview } from '@/components/OpenSeadragonPreview';
 
 interface ResolvedLookup {
   input: string;
@@ -118,6 +119,14 @@ function isVideoAsset(path?: string): boolean {
   }
 
   return /\.(mp4|webm|ogg)(\?.*)?$/i.test(path);
+}
+
+function isDziAsset(path?: string): boolean {
+  if (!path) {
+    return false;
+  }
+
+  return /\.dzi(\?.*)?$/i.test(path);
 }
 
 function escapeSqlString(value: string): string {
@@ -454,6 +463,7 @@ export function ViewConfigUrlResolverComponent() {
                           const previewHeight = primaryBackplate?.Height || layout.BackplateHeight;
                           const backplateUrl = constructCdnUrl(previewPath, result.CdnBaseUrl);
                           const isVideoBackplate = isVideoAsset(previewPath);
+                          const isDziBackplate = isDziAsset(previewPath);
                           const layoutThumbnailUrl = constructCdnUrl(layout.BackplateThumbnailUrl || '', result.CdnBaseUrl);
 
                           return (
@@ -548,12 +558,19 @@ export function ViewConfigUrlResolverComponent() {
                                     <span className="text-xs font-medium text-slate-700">{hasBackplateRows ? `v${primaryBackplate?.Version ?? '-'}` : `v${layout.BackplateVersion ?? '-'}`}</span>
                                   </div>
                                   {backplateUrl ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => window.open(backplateUrl, '_blank', 'noopener,noreferrer')}
-                                      className="block w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
-                                    >
-                                      {isVideoBackplate ? (
+                                    isDziBackplate ? (
+                                      <OpenSeadragonPreview
+                                        assetUrl={backplateUrl}
+                                        title={layout.DisplayName || `Layout ${index + 1}`}
+                                        className="w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                      />
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => window.open(backplateUrl, '_blank', 'noopener,noreferrer')}
+                                        className="block w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                      >
+                                        {isVideoBackplate ? (
                                         <video
                                           src={backplateUrl}
                                           controls
@@ -561,14 +578,15 @@ export function ViewConfigUrlResolverComponent() {
                                           playsInline
                                           className="max-h-[28rem] w-full bg-slate-100 object-contain"
                                         />
-                                      ) : (
+                                        ) : (
                                         <img
                                           src={backplateUrl}
                                           alt={layout.DisplayName || `Layout ${index + 1}`}
                                           className="max-h-[28rem] w-full object-contain bg-slate-100"
                                         />
-                                      )}
-                                    </button>
+                                        )}
+                                      </button>
+                                    )
                                   ) : (
                                     <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500">
                                       No preview
@@ -589,6 +607,7 @@ export function ViewConfigUrlResolverComponent() {
                                       const backplateAssetUrl = constructCdnUrl(backplate.Url, result.CdnBaseUrl);
                                       const backplateThumbnailUrl = constructCdnUrl(backplate.ThumbnailUrl || '', result.CdnBaseUrl);
                                       const isBackplateVideo = isVideoAsset(backplate.Url);
+                                      const isBackplateDzi = isDziAsset(backplate.Url);
 
                                       return (
                                         <div key={backplate.Id || backplateIndex} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -653,12 +672,19 @@ export function ViewConfigUrlResolverComponent() {
                                                 <span className="text-xs font-medium text-slate-700">v{backplate.Version ?? '-'}</span>
                                               </div>
                                               {backplateAssetUrl ? (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => window.open(backplateAssetUrl, '_blank', 'noopener,noreferrer')}
-                                                  className="block w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
-                                                >
-                                                  {isBackplateVideo ? (
+                                                isBackplateDzi ? (
+                                                  <OpenSeadragonPreview
+                                                    assetUrl={backplateAssetUrl}
+                                                    title={`Backplate ${backplateIndex + 1}`}
+                                                    className="w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                                  />
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => window.open(backplateAssetUrl, '_blank', 'noopener,noreferrer')}
+                                                    className="block w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                                  >
+                                                    {isBackplateVideo ? (
                                                     <video
                                                       src={backplateAssetUrl}
                                                       controls
@@ -666,14 +692,15 @@ export function ViewConfigUrlResolverComponent() {
                                                       playsInline
                                                       className="max-h-[28rem] w-full bg-slate-100 object-contain"
                                                     />
-                                                  ) : (
+                                                    ) : (
                                                     <img
                                                       src={backplateAssetUrl}
                                                       alt={`Backplate ${backplateIndex + 1}`}
                                                       className="max-h-[28rem] w-full object-contain bg-slate-100"
                                                     />
-                                                  )}
-                                                </button>
+                                                    )}
+                                                  </button>
+                                                )
                                               ) : (
                                                 <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500">
                                                   No preview
