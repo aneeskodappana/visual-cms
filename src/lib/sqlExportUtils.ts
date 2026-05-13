@@ -519,10 +519,10 @@ export function generateUnitInsertSql(selectedUnits: any[]): string {
 
 function generateProjectInserts(projects: any[]): string {
   const columns = [
-    'Id', 'Code', 'MulesoftCode', 'CommunityKey', 'Title', 'IsVisible', 'IsExplorable', 'CityId',
+    'Id', 'Code', 'Title', 'IsVisible', 'IsExplorable', 'CityId', 'MulesoftCode', 'CommunityKey',
   ];
   const rows = projects.map((p) => [
-    p.Id, p.Code, p.MulesoftCode, p.CommunityKey, p.Title, p.IsVisible, p.IsExplorable, p.CityId,
+    p.Id, p.Code, p.Title, p.IsVisible, p.IsExplorable, p.CityId, p.MulesoftCode, p.CommunityKey,
   ]);
   return buildBulkInsert('Projects', columns, rows);
 }
@@ -718,6 +718,35 @@ function generateProjectVariantsInfoInserts(projects: any[]): string {
   return buildBulkInsert('ProjectVariantsInfo', columns, rows);
 }
 
+function generateUnitVariantInsertsFromProjects(projects: any[]): string {
+  const columns = ['Id', 'Code', 'Title'];
+  const seenCodes = new Set<string>();
+  const seenIds = new Set<string>();
+  const rows: SqlValue[][] = [];
+
+  for (const p of projects) {
+    for (const c of p.Clusters || []) {
+      for (const prop of c.Properties || []) {
+        for (const pf of prop.PropertyFloors || []) {
+          for (const unit of pf.Units || []) {
+            const unitVariant = unit.UnitVariant;
+            if (!unitVariant) continue;
+
+            const dedupeKey = unitVariant.Code || unitVariant.Id;
+            if (!dedupeKey || seenCodes.has(dedupeKey) || seenIds.has(unitVariant.Id)) continue;
+
+            seenCodes.add(dedupeKey);
+            seenIds.add(unitVariant.Id);
+            rows.push([unitVariant.Id, unitVariant.Code, unitVariant.Title]);
+          }
+        }
+      }
+    }
+  }
+
+  return buildBulkInsert('UnitVariants', columns, rows, 'ON CONFLICT ("Code") DO NOTHING');
+}
+
 export function generateProjectInsertSql(selectedProjects: any[]): string {
   if (selectedProjects.length === 0) return '';
 
@@ -732,10 +761,11 @@ export function generateProjectInsertSql(selectedProjects: any[]): string {
 
   const generators = [
     { label: 'Projects', fn: generateProjectInserts },
+    { label: 'Clusters', fn: generateClusterInsertsFromProjects },
     { label: 'ProjectCacheInfo', fn: generateProjectCacheInfoInserts },
     { label: 'ProjectSalesLeadInfo', fn: generateProjectSalesLeadInfoInserts },
     { label: 'ProjectVariantsInfo', fn: generateProjectVariantsInfoInserts },
-    { label: 'Clusters', fn: generateClusterInsertsFromProjects },
+    { label: 'UnitVariants', fn: generateUnitVariantInsertsFromProjects },
     { label: 'Amenities', fn: generateAmenityInsertsFromProjects },
     { label: 'ParkingFloorplans', fn: generateParkingFloorplanInsertsFromProjects },
   ];

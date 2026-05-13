@@ -47,7 +47,11 @@ export async function GET(request: NextRequest) {
             include: {
               PropertyFloors: {
                 include: {
-                  Units: true,
+                  Units: {
+                    include: {
+                      UnitVariant: true,
+                    },
+                  },
                 },
               },
             },
