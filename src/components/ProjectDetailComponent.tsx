@@ -2,7 +2,6 @@
 
 import { useState, useEffect, memo, useCallback } from 'react';
 import { Loader2, Copy, Check, ExternalLink, ChevronDown, ChevronUp, Edit2, Save, X } from 'lucide-react';
-import { FixedSizeList as List } from 'react-window';
 
 interface ProjectDetailData {
   Id: string;
@@ -43,6 +42,8 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
   const [salesLeadData, setSalesLeadData] = useState<any>(null);
   const [savingSalesLead, setSavingSalesLead] = useState(false);
   const [expandedUnits, setExpandedUnits] = useState(false);
+  const [expandedClusters, setExpandedClusters] = useState(false);
+  const [expandedSalesLead, setExpandedSalesLead] = useState(false);
   const [expandedVariantJson, setExpandedVariantJson] = useState(false);
   const [groupByUnitNumber, setGroupByUnitNumber] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -387,14 +388,10 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
     return colorMap[env] || { bg: 'bg-slate-100', text: 'text-slate-700', selectedBg: 'bg-slate-600', selectedText: 'text-white' };
   };
 
-  // Memoized unit row component for virtual scrolling
-  const UnitRow = memo(({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const unit = getAllUnits()[index];
-    if (!unit) return null;
-
+  // Memoized unit row component
+  const UnitRow = memo(({ unit }: { unit: any }) => {
     return (
       <tr
-        style={style}
         className={`border-b border-slate-200 text-sm ${
           selectedUnitIds.has(unit.Id) ? 'bg-blue-50' : 'hover:bg-slate-50'
         }`}
@@ -407,7 +404,6 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
           />
         </td>
         <td className="px-4 py-3 font-medium text-slate-900">{unit.UnitNumber || '-'}</td>
-        <td className="px-4 py-3 font-mono text-xs text-slate-600">{unit.Id}</td>
         <td className="px-4 py-3 text-slate-700">{unit.LocationId || '-'}</td>
         <td className="px-4 py-3 text-slate-700">{unit.clusterTitle || '-'}</td>
         <td className="px-4 py-3 text-slate-700">{unit.propertyTitle || '-'}</td>
@@ -426,6 +422,32 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
               );
             })}
           </div>
+        </td>
+        <td className="px-4 py-3">
+          {unit.UnitVariant ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-900">
+                {unit.UnitVariant.Title || 'Variant'}
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(unit.UnitVariant.Id);
+                  setCopied(`variant-${unit.UnitVariant.Id}`);
+                  setTimeout(() => setCopied(null), 1500);
+                }}
+                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                title="Copy Variant ID"
+              >
+                {copied === `variant-${unit.UnitVariant.Id}` ? (
+                  <Check size={14} />
+                ) : (
+                  <Copy size={14} />
+                )}
+              </button>
+            </div>
+          ) : (
+            <span className="text-sm text-slate-400">-</span>
+          )}
         </td>
       </tr>
     );
@@ -476,7 +498,7 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
       </div>
 
       {/* Project Details Grid */}
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 bg-white p-4">
         <div className="rounded-lg bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">ID</p>
           <p className="mt-2 break-all font-mono text-sm text-slate-900">{project.Id}</p>
@@ -522,32 +544,37 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
 
       {/* Clusters */}
       {project.Clusters && project.Clusters.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-lg font-semibold text-slate-900">Clusters ({project.Clusters.length})</h3>
-          <div className="space-y-3">
-            {project.Clusters.map((cluster) => (
-              <div key={cluster.Id} className="rounded-lg border border-slate-200 p-4 hover:bg-slate-50">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-900">{cluster.Title || 'Untitled'}</p>
-                    <p className="mt-1 break-all font-mono text-xs text-slate-600">{cluster.Code || '-'}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <button
+            onClick={() => setExpandedClusters(!expandedClusters)}
+            className="flex w-full items-center justify-between px-4 py-3 hover:bg-slate-50"
+          >
+            <span className="text-sm font-semibold text-slate-900">
+              Clusters <span className="ml-1 text-slate-500">({project.Clusters.length})</span>
+            </span>
+            {expandedClusters ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </button>
+          {expandedClusters && (
+            <div className="border-t border-slate-200 px-4 py-3">
+              <div className="flex flex-wrap gap-2">
+                {project.Clusters.map((cluster) => (
+                  <div key={cluster.Id} className="flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm">
+                    <span className="font-medium text-slate-900">{cluster.Title || 'Untitled'}</span>
                     {cluster.Properties?.length > 0 && (
-                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">
-                        {cluster.Properties.length} Properties
+                      <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
+                        {cluster.Properties.length}P
                       </span>
                     )}
                     {cluster.Amenities?.length > 0 && (
-                      <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800">
-                        {cluster.Amenities.length} Amenities
+                      <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">
+                        {cluster.Amenities.length}A
                       </span>
                     )}
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -579,101 +606,118 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
       )}
 
       {/* Unit Variants */}
-      {project.VariantInfo && project.VariantInfo.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="mb-4 text-lg font-semibold text-slate-900">Unit Variants ({project.VariantInfo.length})</h3>
-          <div className="space-y-3">
-            {project.VariantInfo.map((variant: any) => (
-              <div
-                key={variant.Id}
-                className="rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-900">{variant.Title || 'Untitled'}</p>
-                    <p className="mt-1 break-all font-mono text-xs text-slate-600">{variant.Code || '-'}</p>
-                    {variant.Description && (
-                      <p className="mt-2 text-sm text-slate-700">{variant.Description}</p>
-                    )}
+      {project.VariantInfo && (
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <button
+            onClick={() => setExpandedVariantJson(!expandedVariantJson)}
+            className="flex w-full items-center justify-between px-4 py-3 hover:bg-slate-50"
+          >
+            <span className="text-sm font-semibold text-slate-900">Unit Variant Types</span>
+            {expandedVariantJson ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </button>
+          {expandedVariantJson && project.VariantInfo.UnitVariantTypes && (
+            <div className="border-t border-slate-200 px-4 py-3">
+              {(() => {
+                const parsed =
+                  typeof project.VariantInfo.UnitVariantTypes === 'string'
+                    ? JSON.parse(project.VariantInfo.UnitVariantTypes)
+                    : project.VariantInfo.UnitVariantTypes;
+                return Object.entries(parsed).map(([key, value]: [string, any]) => (
+                  <div key={key} className="mb-2 last:mb-0">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{key}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {typeof value === 'object' && value !== null
+                        ? Object.entries(value).map(([k, v]) => (
+                            <span key={k} className="rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                              {k}: {String(v)}
+                            </span>
+                          ))
+                        : String(value).split(',').map((v) => v.trim()).filter(Boolean).map((v) => (
+                            <span key={v} className="rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                              {v}
+                            </span>
+                          ))
+                      }
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {variant.IsVisible !== undefined && (
-                      <span
-                        className={`text-xs font-medium px-2 py-1 rounded-full ${
-                          variant.IsVisible
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-slate-200 text-slate-800'
-                        }`}
-                      >
-                        {variant.IsVisible ? 'Visible' : 'Hidden'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                ));
+              })()}
+            </div>
+          )}
         </div>
       )}
 
+
       {/* Sales Lead Info */}
       {project.ProjectSalesLeadInfo && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">Sales Lead Info</h3>
-            {!editingSalesLead && (
-              <button
-                onClick={() => setEditingSalesLead(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                <Edit2 size={14} /> Edit
-              </button>
-            )}
-          </div>
-
-          {editingSalesLead ? (
-            <div className="space-y-4">
-              {Object.entries(salesLeadData || {}).map(([key, value]) => {
-                if (key === 'Id' || key === 'ProjectId') return null;
-                return (
-                  <div key={key}>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">{key}</label>
-                    <input
-                      type="text"
-                      value={value as string}
-                      onChange={(e) => handleSalesLeadChange(key, e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
-                );
-              })}
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={handleSaveClick}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <button
+            onClick={() => setExpandedSalesLead(!expandedSalesLead)}
+            className="flex w-full items-center justify-between px-4 py-3 hover:bg-slate-50"
+          >
+            <span className="text-sm font-semibold text-slate-900">Sales Lead Info</span>
+            <div className="flex items-center gap-2">
+              {expandedSalesLead && !editingSalesLead && (
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); setEditingSalesLead(true); }}
+                  className="inline-flex items-center gap-1 rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700"
                 >
-                  <Save size={16} /> Save
-                </button>
-                <button
-                  onClick={cancelSalesLeadEdit}
-                  className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-              </div>
+                  <Edit2 size={11} /> Edit
+                </span>
+              )}
+              {expandedSalesLead ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {Object.entries(salesLeadData || {}).map(([key, value]) => {
-                if (key === 'Id' || key === 'ProjectId') return null;
-                return (
-                  <div key={key} className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{key}</p>
-                    <p className="mt-1 text-sm text-slate-900">{value as string}</p>
+          </button>
+
+          {expandedSalesLead && (
+            <div className="border-t border-slate-200 p-4">
+              {editingSalesLead ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(salesLeadData || {}).map(([key, value]) => {
+                      if (key === 'Id' || key === 'ProjectId') return null;
+                      return (
+                        <div key={key}>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">{key}</label>
+                          <input
+                            type="text"
+                            value={value as string}
+                            onChange={(e) => handleSalesLeadChange(key, e.target.value)}
+                            className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={handleSaveClick}
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                    >
+                      <Save size={16} /> Save
+                    </button>
+                    <button
+                      onClick={cancelSalesLeadEdit}
+                      className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {Object.entries(salesLeadData || {}).map(([key, value]) => {
+                    if (key === 'Id' || key === 'ProjectId') return null;
+                    return (
+                      <div key={key} className="rounded bg-slate-50 p-2.5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{key}</p>
+                        <p className="mt-0.5 text-sm text-slate-900">{value as string}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -896,7 +940,17 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
 
                         {/* Group Units Table */}
                         <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
+                          <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+                            <colgroup>
+                              <col style={{ width: '40px' }} />
+                              <col style={{ width: '20%' }} />
+                              <col style={{ width: '20%' }} />
+                              <col style={{ width: '10%' }} />
+                              <col style={{ width: '10%' }} />
+                              <col style={{ width: '10%' }} />
+                              <col style={{ width: '15%' }} />
+                              <col style={{ width: '15%' }} />
+                            </colgroup>
                             <thead>
                               <tr className="bg-slate-50 border-b border-slate-200">
                                 <th className="px-4 py-2 text-left font-semibold text-slate-900 w-10">
@@ -916,12 +970,12 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                                     }}
                                   />
                                 </th>
-                                <th className="px-4 py-2 text-left font-semibold text-slate-900">Unit ID</th>
                                 <th className="px-4 py-2 text-left font-semibold text-slate-900">Location ID</th>
                                 <th className="px-4 py-2 text-left font-semibold text-slate-900">Cluster</th>
                                 <th className="px-4 py-2 text-left font-semibold text-slate-900">Property</th>
                                 <th className="px-4 py-2 text-left font-semibold text-slate-900">Floor</th>
                                 <th className="px-4 py-2 text-left font-semibold text-slate-900">Environments</th>
+                                <th className="px-4 py-2 text-left font-semibold text-slate-900">Unit Variant</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -939,7 +993,6 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                                       onChange={() => toggleUnitSelection(unit.Id)}
                                     />
                                   </td>
-                                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{unit.Id}</td>
                                   <td className="px-4 py-3 text-slate-700">{unit.LocationId || '-'}</td>
                                   <td className="px-4 py-3 text-slate-700">{unit.clusterTitle || '-'}</td>
                                   <td className="px-4 py-3 text-slate-700">{unit.propertyTitle || '-'}</td>
@@ -959,6 +1012,32 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                                       })}
                                     </div>
                                   </td>
+                                  <td className="px-4 py-3">
+                                    {unit.UnitVariant ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm text-slate-900">
+                                          {unit.UnitVariant.Title || 'Variant'}
+                                        </span>
+                                        <button
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(unit.UnitVariant.Id);
+                                            setCopied(`variant-${unit.UnitVariant.Id}`);
+                                            setTimeout(() => setCopied(null), 1500);
+                                          }}
+                                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                                          title="Copy Variant ID"
+                                        >
+                                          {copied === `variant-${unit.UnitVariant.Id}` ? (
+                                            <Check size={14} />
+                                          ) : (
+                                            <Copy size={14} />
+                                          )}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-sm text-slate-400">-</span>
+                                    )}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -969,13 +1048,12 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                   })}
                 </div>
               ) : (
-                /* Normal View - Virtualized */
-                <div className="space-y-2">
-                  {/* Table Header */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200">
+                /* Normal View - Single table with scrollable body */
+                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                    <table className="w-full text-sm border-collapse">
+                      <thead className="sticky top-0 z-10 bg-slate-50">
+                        <tr className="border-b border-slate-200">
                           <th className="px-4 py-2 text-left font-semibold text-slate-900 w-10">
                             <input
                               type="checkbox"
@@ -996,33 +1074,20 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                             />
                           </th>
                           <th className="px-4 py-2 text-left font-semibold text-slate-900">Unit #</th>
-                          <th className="px-4 py-2 text-left font-semibold text-slate-900">Unit ID</th>
                           <th className="px-4 py-2 text-left font-semibold text-slate-900">Location ID</th>
                           <th className="px-4 py-2 text-left font-semibold text-slate-900">Cluster</th>
                           <th className="px-4 py-2 text-left font-semibold text-slate-900">Property</th>
                           <th className="px-4 py-2 text-left font-semibold text-slate-900">Floor</th>
                           <th className="px-4 py-2 text-left font-semibold text-slate-900">Environments</th>
+                          <th className="px-4 py-2 text-left font-semibold text-slate-900">Unit Variant</th>
                         </tr>
                       </thead>
+                      <tbody>
+                        {getAllUnits().map((unit) => (
+                          <UnitRow key={unit.Id} unit={unit} />
+                        ))}
+                      </tbody>
                     </table>
-                  </div>
-
-                  {/* Virtualized Table Body */}
-                  <div className="border border-slate-200 rounded-lg overflow-hidden">
-                    <List
-                      height={600}
-                      itemCount={getAllUnits().length}
-                      itemSize={48}
-                      width="100%"
-                    >
-                      {({ index, style }) => (
-                        <table style={{ width: '100%' }}>
-                          <tbody>
-                            <UnitRow index={index} style={style} />
-                          </tbody>
-                        </table>
-                      )}
-                    </List>
                   </div>
                 </div>
               )}
