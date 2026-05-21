@@ -62,6 +62,23 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
   const [showMulesoftDebug, setShowMulesoftDebug] = useState(false);
   const [showQueryModal, setShowQueryModal] = useState(false);
   const [generatedQuery, setGeneratedQuery] = useState<string>('');
+  const [availableEnvironments, setAvailableEnvironments] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchAvailableEnvironments = async () => {
+      try {
+        const response = await fetch('/api/mulesoft/environments');
+        const data = await response.json();
+        if (data.status === 'success') {
+          setAvailableEnvironments(data.data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch available environments:', err);
+      }
+    };
+
+    fetchAvailableEnvironments();
+  }, []);
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -361,6 +378,15 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
     window.setTimeout(() => setCopiedQuery(false), 1500);
   };
 
+  const getEnvironmentColor = (env: string) => {
+    const colorMap: Record<string, { bg: string; text: string; selectedBg: string; selectedText: string }> = {
+      UAT: { bg: 'bg-blue-100', text: 'text-blue-700', selectedBg: 'bg-blue-600', selectedText: 'text-white' },
+      SIT: { bg: 'bg-orange-100', text: 'text-orange-700', selectedBg: 'bg-orange-600', selectedText: 'text-white' },
+      PROD: { bg: 'bg-red-100', text: 'text-red-700', selectedBg: 'bg-red-600', selectedText: 'text-white' },
+    };
+    return colorMap[env] || { bg: 'bg-slate-100', text: 'text-slate-700', selectedBg: 'bg-slate-600', selectedText: 'text-white' };
+  };
+
   // Memoized unit row component for virtual scrolling
   const UnitRow = memo(({ index, style }: { index: number; style: React.CSSProperties }) => {
     const unit = getAllUnits()[index];
@@ -388,16 +414,17 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
         <td className="px-4 py-3 text-slate-700">{unit.floorTitle || '-'}</td>
         <td className="px-4 py-3">
           <div className="flex gap-1">
-            {getUnitEnvironments(unit.LocationId || '-').map((env) => (
-              <span
-                key={env}
-                className={`text-xs font-medium px-2 py-0.5 rounded ${
-                  env === 'UAT' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'
-                }`}
-              >
-                {env}
-              </span>
-            ))}
+            {getUnitEnvironments(unit.LocationId || '-').map((env) => {
+              const colors = getEnvironmentColor(env);
+              return (
+                <span
+                  key={env}
+                  className={`text-xs font-medium px-2 py-0.5 rounded ${colors.bg} ${colors.text}`}
+                >
+                  {env}
+                </span>
+              );
+            })}
           </div>
         </td>
       </tr>
@@ -742,7 +769,7 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                 {Object.keys(mulesoftData).length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     <span className="text-xs font-semibold uppercase text-slate-500">Quick Select:</span>
-                    {['UAT', 'SIT'].map((env) => {
+                    {availableEnvironments.map((env) => {
                       const envUnitsCount = getAllUnits().filter((u) =>
                         getUnitEnvironments(u.LocationId || '-').includes(env)
                       ).length;
@@ -752,6 +779,8 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                       const allEnvUnitsSelected = getAllUnits()
                         .filter((u) => getUnitEnvironments(u.LocationId || '-').includes(env))
                         .every((u) => selectedUnitIds.has(u.Id));
+
+                      const colors = getEnvironmentColor(env);
 
                       return (
                         <button
@@ -765,12 +794,8 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                           }}
                           className={`text-xs font-medium px-3 py-1 rounded ${
                             allEnvUnitsSelected
-                              ? env === 'UAT'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-orange-600 text-white'
-                              : env === 'UAT'
-                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                              ? `${colors.selectedBg} ${colors.selectedText}`
+                              : `${colors.bg} ${colors.text} hover:opacity-80`
                           }`}
                         >
                           {env} ({envUnitsCount})
@@ -790,12 +815,13 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                       getUnitEnvironments(unit.LocationId || '-').forEach((env) => groupEnvironments.add(env));
                     });
 
-                    const uatCount = group.units.filter((u) =>
-                      getUnitEnvironments(u.LocationId || '-').includes('UAT')
-                    ).length;
-                    const sitCount = group.units.filter((u) =>
-                      getUnitEnvironments(u.LocationId || '-').includes('SIT')
-                    ).length;
+                    // Calculate counts for each available environment
+                    const envCounts: Record<string, number> = {};
+                    availableEnvironments.forEach((env) => {
+                      envCounts[env] = group.units.filter((u) =>
+                        getUnitEnvironments(u.LocationId || '-').includes(env)
+                      ).length;
+                    });
 
                     return (
                       <div key={group.unitNumber} className="rounded-lg border border-slate-200 overflow-hidden">
@@ -811,84 +837,59 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                               )}
                             </div>
                             <div className="flex items-center gap-3">
-                              {Array.from(groupEnvironments).map((env) => (
-                                <span
-                                  key={env}
-                                  className={`text-xs font-medium px-2 py-1 rounded ${
-                                    env === 'UAT'
-                                      ? 'bg-blue-100 text-blue-800'
-                                      : 'bg-orange-100 text-orange-800'
-                                  }`}
-                                >
-                                  {env}
-                                </span>
-                              ))}
+                              {Array.from(groupEnvironments).map((env) => {
+                                const colors = getEnvironmentColor(env);
+                                return (
+                                  <span
+                                    key={env}
+                                    className={`text-xs font-medium px-2 py-1 rounded ${colors.bg} ${colors.text}`}
+                                  >
+                                    {env}
+                                  </span>
+                                );
+                              })}
                             </div>
                           </div>
 
                           {/* Environment Select All Buttons */}
-                          {(uatCount > 0 || sitCount > 0) && (
+                          {Object.values(envCounts).some((count) => count > 0) && (
                             <div className="mt-3 flex gap-2">
-                              {uatCount > 0 && (
-                                <button
-                                  onClick={() => {
-                                    const allSelected = group.units
-                                      .filter((u) => getUnitEnvironments(u.LocationId || '-').includes('UAT'))
-                                      .every((u) => selectedUnitIds.has(u.Id));
+                              {availableEnvironments.map((env) => {
+                                const count = envCounts[env];
+                                if (count === 0) return null;
 
-                                    if (allSelected) {
-                                      deselectAllInEnvironment('UAT');
-                                    } else {
-                                      const newSelection = new Set(selectedUnitIds);
-                                      group.units.forEach((u) => {
-                                        if (getUnitEnvironments(u.LocationId || '-').includes('UAT')) {
-                                          newSelection.add(u.Id);
-                                        }
-                                      });
-                                      setSelectedUnitIds(newSelection);
-                                    }
-                                  }}
-                                  className={`text-xs font-medium px-3 py-1 rounded ${
-                                    group.units
-                                      .filter((u) => getUnitEnvironments(u.LocationId || '-').includes('UAT'))
-                                      .every((u) => selectedUnitIds.has(u.Id))
-                                      ? 'bg-blue-600 text-white'
-                                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                  }`}
-                                >
-                                  UAT ({uatCount})
-                                </button>
-                              )}
-                              {sitCount > 0 && (
-                                <button
-                                  onClick={() => {
-                                    const allSelected = group.units
-                                      .filter((u) => getUnitEnvironments(u.LocationId || '-').includes('SIT'))
-                                      .every((u) => selectedUnitIds.has(u.Id));
+                                const allSelected = group.units
+                                  .filter((u) => getUnitEnvironments(u.LocationId || '-').includes(env))
+                                  .every((u) => selectedUnitIds.has(u.Id));
 
-                                    if (allSelected) {
-                                      deselectAllInEnvironment('SIT');
-                                    } else {
-                                      const newSelection = new Set(selectedUnitIds);
-                                      group.units.forEach((u) => {
-                                        if (getUnitEnvironments(u.LocationId || '-').includes('SIT')) {
-                                          newSelection.add(u.Id);
-                                        }
-                                      });
-                                      setSelectedUnitIds(newSelection);
-                                    }
-                                  }}
-                                  className={`text-xs font-medium px-3 py-1 rounded ${
-                                    group.units
-                                      .filter((u) => getUnitEnvironments(u.LocationId || '-').includes('SIT'))
-                                      .every((u) => selectedUnitIds.has(u.Id))
-                                      ? 'bg-orange-600 text-white'
-                                      : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                  }`}
-                                >
-                                  SIT ({sitCount})
-                                </button>
-                              )}
+                                const colors = getEnvironmentColor(env);
+
+                                return (
+                                  <button
+                                    key={env}
+                                    onClick={() => {
+                                      if (allSelected) {
+                                        deselectAllInEnvironment(env);
+                                      } else {
+                                        const newSelection = new Set(selectedUnitIds);
+                                        group.units.forEach((u) => {
+                                          if (getUnitEnvironments(u.LocationId || '-').includes(env)) {
+                                            newSelection.add(u.Id);
+                                          }
+                                        });
+                                        setSelectedUnitIds(newSelection);
+                                      }
+                                    }}
+                                    className={`text-xs font-medium px-3 py-1 rounded ${
+                                      allSelected
+                                        ? `${colors.selectedBg} ${colors.selectedText}`
+                                        : `${colors.bg} ${colors.text} hover:opacity-80`
+                                    }`}
+                                  >
+                                    {env} ({count})
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -945,18 +946,17 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
                                   <td className="px-4 py-3 text-slate-700">{unit.floorTitle || '-'}</td>
                                   <td className="px-4 py-3">
                                     <div className="flex gap-1">
-                                      {getUnitEnvironments(unit.LocationId || '-').map((env) => (
-                                        <span
-                                          key={env}
-                                          className={`text-xs font-medium px-2 py-0.5 rounded ${
-                                            env === 'UAT'
-                                              ? 'bg-blue-100 text-blue-800'
-                                              : 'bg-orange-100 text-orange-800'
-                                          }`}
-                                        >
-                                          {env}
-                                        </span>
-                                      ))}
+                                      {getUnitEnvironments(unit.LocationId || '-').map((env) => {
+                                        const colors = getEnvironmentColor(env);
+                                        return (
+                                          <span
+                                            key={env}
+                                            className={`text-xs font-medium px-2 py-0.5 rounded ${colors.bg} ${colors.text}`}
+                                          >
+                                            {env}
+                                          </span>
+                                        );
+                                      })}
                                     </div>
                                   </td>
                                 </tr>
@@ -1038,34 +1038,26 @@ export function ProjectDetailComponent({ projectId }: ProjectDetailComponentProp
             <h3 className="mb-4 text-xl font-semibold text-slate-900">Fetch Units from Mulesoft</h3>
 
             <div className="mb-4 space-y-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selectedEnvironments.includes('UAT')}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedEnvironments([...selectedEnvironments, 'UAT']);
-                    } else {
-                      setSelectedEnvironments(selectedEnvironments.filter((env) => env !== 'UAT'));
-                    }
-                  }}
-                />
-                <span>UAT</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selectedEnvironments.includes('SIT')}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedEnvironments([...selectedEnvironments, 'SIT']);
-                    } else {
-                      setSelectedEnvironments(selectedEnvironments.filter((env) => env !== 'SIT'));
-                    }
-                  }}
-                />
-                <span>SIT</span>
-              </label>
+              {availableEnvironments.length === 0 ? (
+                <p className="text-sm text-slate-600">No environments configured with Mulesoft credentials</p>
+              ) : (
+                availableEnvironments.map((env) => (
+                  <label key={env} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedEnvironments.includes(env)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedEnvironments([...selectedEnvironments, env]);
+                        } else {
+                          setSelectedEnvironments(selectedEnvironments.filter((e) => e !== env));
+                        }
+                      }}
+                    />
+                    <span>{env}</span>
+                  </label>
+                ))
+              )}
             </div>
 
             <div className="flex gap-3">

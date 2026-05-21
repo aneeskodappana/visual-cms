@@ -6,6 +6,17 @@ interface MulesoftUnitDetail {
   [key: string]: any;
 }
 
+// Helper function to get available environments
+export function getAvailableEnvironments(): string[] {
+  const possibleEnvs = ['UAT', 'SIT', 'PROD'];
+  return possibleEnvs.filter((env) => {
+    const clientId = process.env[`MULESOFT_${env}_CLIENT_ID`];
+    const clientSecret = process.env[`MULESOFT_${env}_CLIENT_SECRET`];
+    const endpoint = process.env[`MULESOFT_${env}_ENDPOINT`];
+    return clientId && clientSecret && endpoint;
+  });
+}
+
 async function fetchUnitDetails(
   endpoint: string,
   clientId: string,
