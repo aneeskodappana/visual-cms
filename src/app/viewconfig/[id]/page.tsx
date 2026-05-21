@@ -6,6 +6,12 @@ import Link from 'next/link';
 import { TransformWrapper, TransformComponent, useTransformEffect } from 'react-zoom-pan-pinch';
 import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName } from '@/lib/cdnUtils';
 import { v4 as uuidv4 } from 'uuid';
+import { Layout2DDziViewer } from '@/components/Layout2DDziViewer';
+
+function isDziAsset(path?: string | null): boolean {
+  if (!path) return false;
+  return /\.dzi(\?.*)?$/i.test(path);
+}
 
 interface Layout2D {
   Id: string;
@@ -27,6 +33,35 @@ interface Marker {
   PositionLeft: number;
   IconUrl?: string;
   HoverIconUrl?: string;
+  KeepScale?: boolean;
+  MinZoom?: number | null;
+  MaxZoom?: number | null;
+  MobileMinZoom?: number | null;
+  MobileMaxZoom?: number | null;
+}
+
+// Markers may store a built-in icon reference like "#ui-villas-and-towers" in
+// IconUrl instead of a real path. Anything starting with "#" is not a URL and
+// should fall back to the generic dot icon. Mirrors how WebApp treats these.
+function isImageIconUrl(url?: string | null): boolean {
+  if (!url) return false;
+  return !url.trim().includes('#');
+}
+
+// WebApp scales the OSD zoom by (window.width / 2048) before comparing to a
+// marker's MinZoom/MaxZoom. See WebApp's useMarkerScaleRef + useMarkerVisibility.
+const VIEWPORT_REFERENCE_WIDTH = 2048;
+
+function getWindowScaleFactor(): number {
+  if (typeof window === 'undefined') return 1;
+  return window.innerWidth / VIEWPORT_REFERENCE_WIDTH;
+}
+
+function isMarkerVisibleAtScale(marker: Marker, effectiveScale: number, isMobile: boolean): boolean {
+  const minZoom = isMobile ? marker.MobileMinZoom : marker.MinZoom;
+  const maxZoom = isMobile ? marker.MobileMaxZoom : marker.MaxZoom;
+  if (minZoom == null || maxZoom == null) return true;
+  return effectiveScale >= minZoom && effectiveScale <= maxZoom;
 }
 
 interface ViewConfig {
@@ -89,6 +124,7 @@ function MarkerOverlay({
   markerEdits?: Record<string, { title?: string; iconUrl?: string }>;
 }) {
   const [scale, setScale] = useState(1);
+  const [windowScale, setWindowScale] = useState(getWindowScaleFactor);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isDragConfirmed, setIsDragConfirmed] = useState(false);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
@@ -100,6 +136,12 @@ function MarkerOverlay({
   useTransformEffect(({ state }) => {
     setScale(state.scale);
   });
+
+  useEffect(() => {
+    const onResize = () => setWindowScale(getWindowScaleFactor());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const handlePointerDown = (e: React.PointerEvent, markerId: string) => {
     if (!isEditMode) return;
@@ -162,6 +204,15 @@ function MarkerOverlay({
         const hasEdits = markerEdits?.[marker.Id] !== undefined;
         const displayTitle = markerEdits?.[marker.Id]?.title ?? marker.Title;
         const displayIconUrl = markerEdits?.[marker.Id]?.iconUrl ?? marker.IconUrl;
+        const renderAsImage = isImageIconUrl(displayIconUrl);
+
+        const effectiveScale = scale * windowScale;
+        const isInZoomRange = isMarkerVisibleAtScale(marker, effectiveScale, false);
+        // In edit mode keep all markers visible/draggable regardless of zoom-range gating.
+        const isHiddenByZoom = !isEditMode && !isInZoomRange;
+        // KeepScale === true: marker stays at constant visible size (inverse-scaled by zoom).
+        // KeepScale === false: marker grows with the image (no inverse scale).
+        const visualScale = marker.KeepScale === false ? 1 : 1 / scale;
 
         return (
           <div
@@ -170,10 +221,12 @@ function MarkerOverlay({
             style={{
               top: `${(top / (layout2d.BackplateHeight || 1080)) * 100}%`,
               left: `${(left / (layout2d.BackplateWidth || 1920)) * 100}%`,
-              transform: `translate(-50%, -50%) scale(${1 / scale})`,
+              transform: `translate(-50%, -50%) scale(${visualScale})`,
               transformOrigin: 'center',
               zIndex: draggingId === marker.Id ? 100 : 50,
-              pointerEvents: 'auto',
+              pointerEvents: isHiddenByZoom ? 'none' : 'auto',
+              opacity: isHiddenByZoom ? 0 : 1,
+              visibility: isHiddenByZoom ? 'hidden' : 'visible',
             }}
             onPointerDown={(e) => isEditMode ? handlePointerDown(e, marker.Id) : undefined}
             onClick={(e) => {
@@ -197,7 +250,7 @@ function MarkerOverlay({
             {isEditMode && !isTemp && (hasChanged || hasEdits) && (
               <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border border-white z-10" />
             )}
-            {(displayIconUrl) ? (
+            {renderAsImage ? (
               <img
                 src={`https://worlddev.aldar.com/assets/${displayIconUrl}`}
                 alt={displayTitle || 'marker'}
@@ -1245,7 +1298,24 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
       )}
 
       {/* Full-screen Layout2D Viewer */}
-      {layout2d && backplateUrl && (
+      {layout2d && backplateUrl && isDziAsset(layout2d.BackplateUrl) && (
+        <Layout2DDziViewer
+          dziUrl={backplateUrl}
+          layout2d={layout2d}
+          onSelectMarker={setSelectedMarker}
+          isEditMode={isEditMode}
+          positionOverrides={positionOverrides}
+          onMarkerDrag={handleMarkerDrag}
+          onReplicate={handleReplicateMarker}
+          onEditMarker={setEditingMarker}
+          onDeleteMarker={setDeletingMarker}
+          tempMarkerIds={tempMarkerIds}
+          markerEdits={markerEdits}
+          buildMarkerInsertSql={buildMarkerInsertSql}
+        />
+      )}
+
+      {layout2d && backplateUrl && !isDziAsset(layout2d.BackplateUrl) && (
         <TransformWrapper
           initialScale={1}
           minScale={1}
