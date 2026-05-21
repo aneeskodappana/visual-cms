@@ -15,6 +15,8 @@ type Marker = {
   PositionLeft: number;
   IconUrl?: string;
   HoverIconUrl?: string;
+  IconWidth?: number | null;
+  IconHeight?: number | null;
   KeepScale?: boolean;
   MinZoom?: number | null;
   MaxZoom?: number | null;
@@ -34,6 +36,99 @@ function isMarkerVisibleAtScale(marker: Marker, effectiveScale: number, isMobile
   const maxZoom = isMobile ? marker.MobileMaxZoom : marker.MaxZoom;
   if (minZoom == null || maxZoom == null) return true;
   return effectiveScale >= minZoom && effectiveScale <= maxZoom;
+}
+
+function MarkerFallbackDot({ isTemp, isEditMode }: { isTemp: boolean; isEditMode: boolean }) {
+  return (
+    <div className={`w-6 h-6 rounded-full ${isTemp ? 'bg-green-500' : 'bg-blue-500'} border-2 border-white shadow-lg flex items-center justify-center flex-shrink-0 ${isTemp ? 'ring-2 ring-green-400 ring-offset-1' : isEditMode ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+      <div className="w-2 h-2 bg-white rounded-full"></div>
+    </div>
+  );
+}
+
+function MarkerIcon({
+  markerId,
+  iconUrl,
+  title,
+  isTemp,
+  isEditMode,
+  onInlineSvgStateChange,
+}: {
+  markerId: string;
+  iconUrl: string;
+  title: string;
+  isTemp: boolean;
+  isEditMode: boolean;
+  onInlineSvgStateChange?: (markerId: string, isInlineSvg: boolean) => void;
+}) {
+  const fullUrl = `https://worlddev.aldar.com/assets/${iconUrl}`;
+  const isSvg = /\.svg($|\?)/i.test(iconUrl);
+  const [errored, setErrored] = useState(false);
+  const [inlineSvg, setInlineSvg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setErrored(false);
+    setInlineSvg(null);
+  }, [iconUrl]);
+
+  useEffect(() => {
+    if (!errored || !isSvg || inlineSvg !== null) return;
+    let cancelled = false;
+    fetch(fullUrl)
+      .then((r) => (r.ok ? r.text() : null))
+      .then((text) => {
+        if (cancelled || !text) return;
+        setInlineSvg(text);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [errored, isSvg, inlineSvg, fullUrl]);
+
+  useEffect(() => {
+    onInlineSvgStateChange?.(markerId, inlineSvg !== null);
+  }, [markerId, inlineSvg, onInlineSvgStateChange]);
+
+  const ringClass = isTemp
+    ? 'ring-2 ring-green-400 ring-offset-1 rounded'
+    : isEditMode
+      ? 'ring-2 ring-blue-400 ring-offset-1 rounded'
+      : 'hover:saturate-150';
+
+  if (inlineSvg) {
+    const scopeClass = `inline-svg-${markerId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    return (
+      <>
+        <style>{`
+          .${scopeClass} { width: 100%; height: 100%; }
+          .${scopeClass} svg { width: 100%; height: 100%; display: block; overflow: visible; }
+          .${scopeClass} svg * { fill: rgba(255, 255, 255, 0.45) !important; stroke: rgba(255, 255, 255, 0.85) !important; stroke-width: 0.5 !important; }
+        `}</style>
+        <div
+          className={`drop-shadow-md ${ringClass} ${scopeClass} transition-all`}
+          style={{ flexShrink: 0, pointerEvents: 'none' }}
+          aria-label={title || 'marker'}
+          dangerouslySetInnerHTML={{ __html: inlineSvg }}
+        />
+      </>
+    );
+  }
+
+  if (errored) {
+    return <MarkerFallbackDot isTemp={isTemp} isEditMode={isEditMode} />;
+  }
+
+  return (
+    <img
+      src={fullUrl}
+      alt={title || 'marker'}
+      className={`drop-shadow-lg ${ringClass} transition-all`}
+      style={{ width: '40px', height: '40px', flexShrink: 0 }}
+      draggable={false}
+      onError={() => setErrored(true)}
+    />
+  );
 }
 
 type Layout2D = {
@@ -91,12 +186,24 @@ export function Layout2DDziViewer({
   const [isDragConfirmed, setIsDragConfirmed] = useState(false);
   const [activePopupId, setActivePopupId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inlineSvgIds, setInlineSvgIds] = useState<Set<string>>(() => new Set());
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const onResize = () => setWindowScale(window.innerWidth / VIEWPORT_REFERENCE_WIDTH);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const handleInlineSvgStateChange = useCallback((markerId: string, isInlineSvg: boolean) => {
+    setInlineSvgIds((prev) => {
+      const has = prev.has(markerId);
+      if (has === isInlineSvg) return prev;
+      const next = new Set(prev);
+      if (isInlineSvg) next.add(markerId);
+      else next.delete(markerId);
+      return next;
+    });
   }, []);
 
   const backplateWidth = layout2d.BackplateWidth || 1920;
@@ -273,27 +380,39 @@ export function Layout2DDziViewer({
           const effectiveScale = osdZoom * windowScale;
           const isInZoomRange = isMarkerVisibleAtScale(marker, effectiveScale, false);
           const isHiddenByZoom = !isEditMode && !isInZoomRange;
-          // KeepScale === true: marker stays at its natural CSS size (no parent
-          // transform here, so the icon's pixel dimensions stay constant as the
-          // user zooms — only the marker's anchor position moves with the image).
-          // KeepScale === false: marker grows with the image, matching WebApp's
-          // `transform: scale(zoom * windowScale)` behavior.
-          const visualScale = marker.KeepScale === false ? effectiveScale : 1;
+          // When the marker rendered an inline SVG (e.g. project-overlay shape)
+          // and we know its image-pixel dimensions, size the container as a
+          // percentage of the image footprint so it appears at the correct
+          // geographic scale and grows with the image. Otherwise use the
+          // KeepScale-based behavior on the natural CSS size of the icon.
+          const useImageRelativeSize =
+            inlineSvgIds.has(marker.Id) && marker.IconWidth != null && marker.IconHeight != null;
+          const visualScale = useImageRelativeSize
+            ? 1
+            : marker.KeepScale === false
+              ? effectiveScale
+              : 1;
+
+          const containerStyle: React.CSSProperties = {
+            top: `${(top / backplateHeight) * 100}%`,
+            left: `${(left / backplateWidth) * 100}%`,
+            transform: `translate(-50%, -50%) scale(${visualScale})`,
+            transformOrigin: 'center',
+            zIndex: draggingId === marker.Id ? 100 : 50,
+            pointerEvents: isHiddenByZoom ? 'none' : 'auto',
+            opacity: isHiddenByZoom ? 0 : 1,
+            visibility: isHiddenByZoom ? 'hidden' : 'visible',
+          };
+          if (useImageRelativeSize) {
+            containerStyle.width = `${(marker.IconWidth! / backplateWidth) * 100}%`;
+            containerStyle.height = `${(marker.IconHeight! / backplateHeight) * 100}%`;
+          }
 
           return (
             <div
               key={marker.Id}
               className={`absolute group ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
-              style={{
-                top: `${(top / backplateHeight) * 100}%`,
-                left: `${(left / backplateWidth) * 100}%`,
-                transform: `translate(-50%, -50%) scale(${visualScale})`,
-                transformOrigin: 'center',
-                zIndex: draggingId === marker.Id ? 100 : 50,
-                pointerEvents: isHiddenByZoom ? 'none' : 'auto',
-                opacity: isHiddenByZoom ? 0 : 1,
-                visibility: isHiddenByZoom ? 'hidden' : 'visible',
-              }}
+              style={containerStyle}
               onPointerDown={(e) => isEditMode ? handlePointerDown(e, marker.Id) : undefined}
               onClick={(e) => {
                 if (!isEditMode) {
@@ -316,18 +435,17 @@ export function Layout2DDziViewer({
               {isEditMode && !isTemp && (hasChanged || hasEdits) && (
                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border border-white z-10" />
               )}
-              {renderAsImage ? (
-                <img
-                  src={`https://worlddev.aldar.com/assets/${displayIconUrl}`}
-                  alt={displayTitle || 'marker'}
-                  className={`drop-shadow-lg ${isTemp ? 'ring-2 ring-green-400 ring-offset-1 rounded' : isEditMode ? 'ring-2 ring-blue-400 ring-offset-1 rounded' : 'hover:saturate-150'} transition-all`}
-                  style={{ width: '40px', height: '40px', flexShrink: 0 }}
-                  draggable={false}
+              {renderAsImage && displayIconUrl ? (
+                <MarkerIcon
+                  markerId={marker.Id}
+                  iconUrl={displayIconUrl}
+                  title={displayTitle}
+                  isTemp={isTemp}
+                  isEditMode={isEditMode}
+                  onInlineSvgStateChange={handleInlineSvgStateChange}
                 />
               ) : (
-                <div className={`w-6 h-6 rounded-full ${isTemp ? 'bg-green-500' : 'bg-blue-500'} border-2 border-white shadow-lg flex items-center justify-center flex-shrink-0 ${isTemp ? 'ring-2 ring-green-400 ring-offset-1' : isEditMode ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
-                </div>
+                <MarkerFallbackDot isTemp={isTemp} isEditMode={isEditMode} />
               )}
 
               {!isEditMode && (
