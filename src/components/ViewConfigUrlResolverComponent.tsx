@@ -352,7 +352,7 @@ export function ViewConfigUrlResolverComponent() {
 
       {results.length > 0 && (
         <div className="space-y-6">
-          {results.map((result) => {
+          {results.map((result, index) => {
             const relationSummary = [
               result.Nation ? 'Nation' : null,
               result.City ? 'City' : null,
@@ -371,7 +371,7 @@ export function ViewConfigUrlResolverComponent() {
             const layout2dCount = result.Layout2Ds?.length || 0;
 
             return (
-              <details key={result.Id} className="rounded-lg border border-slate-200 bg-white shadow-sm">
+              <details key={result.Id} className="rounded-lg border border-slate-200 bg-white shadow-sm" open={index === 0}>
                 <summary className="cursor-pointer list-none p-6">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
