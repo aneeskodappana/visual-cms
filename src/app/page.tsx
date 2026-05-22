@@ -3,11 +3,27 @@
 import { useState, useCallback } from 'react';
 import { DatabaseTestComponent } from "@/components/DatabaseTestComponent";
 import { DatabaseSelectorModal } from "@/components/DatabaseSelectorModal";
-import { Database } from 'lucide-react';
+import { Database, ChevronDown } from 'lucide-react';
+import { MarkerTypes, MarkerSubTypes } from '@/lib/cdnUtils';
+
+// Build a sorted list of { value, name } from a numeric TypeScript enum.
+// Numeric enums have both forward (name→number) and reverse (number→name) entries;
+// filtering on isNaN keeps only the number keys.
+function enumToList(e: object) {
+  return Object.entries(e)
+    .filter(([k]) => !isNaN(Number(k)))
+    .map(([k, v]) => ({ value: Number(k), name: String(v) }))
+    .sort((a, b) => a.value - b.value);
+}
+
+const markerKinds = enumToList(MarkerTypes);
+const markerSubTypes = enumToList(MarkerSubTypes);
 
 export default function Home() {
   const [dbModalOpen, setDbModalOpen] = useState(false);
   const [dbRefreshKey, setDbRefreshKey] = useState(0);
+  const [showKinds, setShowKinds] = useState(false);
+  const [showSubTypes, setShowSubTypes] = useState(false);
 
   const handleDbSwitch = useCallback(() => {
     setDbRefreshKey((k) => k + 1);
@@ -88,6 +104,58 @@ export default function Home() {
               </a>
             </div>
           </section>
+          {/* Marker Kinds Reference */}
+          <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+            <button
+              onClick={() => setShowKinds(!showKinds)}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-slate-900">Marker Kinds</h2>
+                <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{markerKinds.length} kinds</span>
+              </div>
+              <ChevronDown size={18} className={`text-slate-400 transition-transform ${showKinds ? 'rotate-180' : ''}`} />
+            </button>
+            {showKinds && (
+              <div className="border-t border-slate-200 p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {markerKinds.map(({ value, name }) => (
+                    <div key={value} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                      <span className="text-xs font-mono text-slate-400 w-5 flex-shrink-0 text-right">{value}</span>
+                      <span className="text-sm font-medium text-slate-800 truncate">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Marker SubTypes Reference */}
+          <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+            <button
+              onClick={() => setShowSubTypes(!showSubTypes)}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-slate-900">Marker SubTypes</h2>
+                <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{markerSubTypes.length} subtypes</span>
+              </div>
+              <ChevronDown size={18} className={`text-slate-400 transition-transform ${showSubTypes ? 'rotate-180' : ''}`} />
+            </button>
+            {showSubTypes && (
+              <div className="border-t border-slate-200 p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {markerSubTypes.map(({ value, name }) => (
+                    <div key={value} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
+                      <span className="text-xs font-mono text-slate-400 w-5 flex-shrink-0 text-right">{value}</span>
+                      <span className="text-sm font-medium text-slate-800 truncate">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
           <section>
             <h2 className="text-2xl font-semibold text-slate-900 mb-4">Database Status</h2>
             <DatabaseTestComponent key={dbRefreshKey} />

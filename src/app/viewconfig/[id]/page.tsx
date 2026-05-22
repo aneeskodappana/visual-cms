@@ -1534,9 +1534,9 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
             className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors rounded-t-lg"
           >
             <span className="text-sm font-medium text-gray-900">Markers ({layout2d.Markers.length})</span>
-            <ChevronLeft 
-              size={16} 
-              className={`text-gray-400 transition-transform ${showMarkersList ? 'rotate-90' : '-rotate-90'}`} 
+            <ChevronLeft
+              size={16}
+              className={`text-gray-400 transition-transform ${showMarkersList ? 'rotate-90' : '-rotate-90'}`}
             />
           </button>
           
