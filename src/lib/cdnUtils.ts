@@ -121,6 +121,13 @@ export const getMarkerSubTypeName = (subType?: number): string => {
 };
 
 /**
+ * True when a URL is already fully-qualified (http(s)/data/blob) and should NOT be prefixed with
+ * the CDN base. Lets users paste absolute URLs while DB-stored relative paths get resolved.
+ */
+export const isAbsoluteAssetUrl = (url?: string): boolean =>
+  !!url && /^(https?:|data:|blob:)/i.test(url);
+
+/**
  * Constructs a full CDN URL from a backplate path and ViewConfig CDN base URL
  * @param backplatePath - The relative path to the backplate (e.g., 'image.jpg')
  * @param cdnBaseUrl - The ViewConfig's CDN base URL (e.g., 'mycdn/folder/')

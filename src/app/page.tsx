@@ -49,6 +49,12 @@ export default function Home() {
           <section className="p-6 bg-white border border-slate-200 rounded-lg shadow-sm">
             <div className="flex flex-wrap gap-3">
               <a
+                href="/page-builder"
+                className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors text-sm font-medium"
+              >
+                Visual Page Builder
+              </a>
+              <a
                 href="/projects"
                 className="px-4 py-2 bg-rose-600 text-white rounded hover:bg-rose-700 transition-colors text-sm font-medium"
               >
