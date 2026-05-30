@@ -3,12 +3,50 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, FolderSearch, FileText, Zap, Copy, Check, AlertCircle, ChevronDown, ChevronUp, Box,
+  ArrowLeft, FolderSearch, FileText, Zap, Copy, Check, AlertCircle, ChevronDown, ChevronUp, Box, Download,
 } from 'lucide-react';
 
 interface ProjectInfo {
   folder: string; fullPath: string; projectCode: string; cdnBaseUrl: string;
   csvFolder: string; backplateFolder: string; subfolders: string[];
+}
+
+interface MulesoftUnit {
+  aldar_unit_number: string;
+  mirror: string;
+  featureSpecification: string;
+  unit_type: string;
+  unit_category: string;
+  bedrooms: string;
+  premiumApplicable: boolean;
+  attr_off_building: string;
+  attr_off_floor: string;
+  attr_community_name: string;
+  cluster_name: string;
+  [key: string]: any;
+}
+
+const UNIT_TYPE_MAP: Record<string, string> = {
+  Villa: 'V', Townhouse: 'TH', Apartment: 'A', Duplex: 'A',
+  Triplex: 'TX', Penthouse: 'PH', House: 'H', 'Sky villa': 'SV',
+};
+
+function getUnitVariantCode(unit: MulesoftUnit) {
+  const sanitized = (unit.featureSpecification || '').replace(/[^a-zA-Z0-9]/g, '').replace(/type/gi, '');
+  const mappedUnitType = UNIT_TYPE_MAP[unit.unit_type] || unit.unit_type;
+  const mappedPremium = unit.premiumApplicable === false ? 'S' : 'P';
+  const mappedBedrooms = unit.bedrooms ? `${unit.bedrooms}B` : unit.bedrooms;
+  const mappedFlipped = unit.mirror === 'NORMAL' ? '' : 'F';
+  const unitCategory = unit.unit_category || '';
+  let isSt = unitCategory.includes('ST') ? '_st' : '';
+  let includeBedroom = !isSt;
+  if (unitCategory.toLowerCase().includes('duplex')) {
+    includeBedroom = false;
+    isSt = '_duplex';
+  }
+  const code = `${mappedUnitType}_${mappedPremium}${includeBedroom ? '_' + mappedBedrooms : ''}${isSt}_${sanitized}`.toLowerCase();
+  const flippedCode = `${mappedUnitType}_${mappedPremium}${includeBedroom ? '_' + mappedBedrooms : ''}${mappedFlipped}${isSt}_${sanitized}`.toLowerCase();
+  return { code, flippedCode };
 }
 
 interface ScanResult {
@@ -52,12 +90,53 @@ export default function InteriorGeneratorPage() {
   const [copied, setCopied] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
+  const [mulesoftEnvs, setMulesoftEnvs] = useState<string[]>([]);
+  const [selectedEnv, setSelectedEnv] = useState('');
+  const [dbProjects, setDbProjects] = useState<{ Id: string; Code: string; Title: string; CommunityKey: string }[]>([]);
+  const [selectedDbProject, setSelectedDbProject] = useState('');
+  const [mulesoftUnits, setMulesoftUnits] = useState<MulesoftUnit[]>([]);
+  const [loadingMulesoft, setLoadingMulesoft] = useState(false);
+  const [mulesoftError, setMulesoftError] = useState<string | null>(null);
+  const [mulesoftLoaded, setMulesoftLoaded] = useState(false);
+  const [mulesoftDebug, setMulesoftDebug] = useState<Record<string, { endpoint: string; clientIdPrefix: string; body: object }> | null>(null);
+
   useEffect(() => {
     fetch('/api/page-builder/floorplans/projects')
       .then((r) => r.json())
       .then((json) => { if (json.status === 'success') setAvailableProjects(json.data); })
       .finally(() => setLoadingProjects(false));
+    fetch('/api/mulesoft/environments')
+      .then((r) => r.json())
+      .then((json) => { if (json.status === 'success' && json.data.length > 0) { setMulesoftEnvs(json.data); setSelectedEnv(json.data[0]); } });
+    fetch('/api/projects?limit=200')
+      .then((r) => r.json())
+      .then((json) => { if (json.status === 'success') setDbProjects(json.data); });
   }, []);
+
+  const selectedDbProjectData = dbProjects.find((p) => p.Id === selectedDbProject);
+  const communityName = selectedDbProjectData?.Title || '';
+
+  const handleLoadMulesoft = useCallback(async () => {
+    if (!selectedEnv || !communityName) return;
+    setLoadingMulesoft(true); setMulesoftError(null);
+    try {
+      const res = await fetch('/api/mulesoft/unit-details', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ environments: [selectedEnv], communityName }),
+      });
+      const json = await res.json();
+      if (json.debug) setMulesoftDebug(json.debug);
+      if (json.status === 'success') {
+        const units = json.data[selectedEnv] || [];
+        setMulesoftUnits(units);
+        setMulesoftLoaded(true);
+        if (units.length === 0) setMulesoftError('No units returned from MuleSoft');
+      } else {
+        setMulesoftError(json.error || 'Failed to load MuleSoft data');
+      }
+    } catch (e) { setMulesoftError(e instanceof Error ? e.message : 'Failed'); }
+    finally { setLoadingMulesoft(false); }
+  }, [selectedEnv, communityName]);
 
   const handleProjectSelect = (folder: string) => {
     const proj = availableProjects.find((p) => p.folder === folder);
@@ -107,29 +186,42 @@ export default function InteriorGeneratorPage() {
 
       const code = `${projectCode}_${tower}-${parseInt(floor) || floor}${unitNum}_${defaultScheme}`;
 
-      // Match collision GLB and CSV camera by unit type prefix
-      // Folder: AlGhadeerGardens-NA1_R2-TH-001 → type = "th"
-      // Collision: model_360-collision_th_s_3b_3tm.glb → contains "th_"
-      // CSV: csv_camera_th_s_3b_3tm_s1.csv → contains "th_"
-      const folderParts = folder.split('-');
-      const unitTypeRaw = folderParts.find((p) => /^(TH|V|A|PH|SV|TX|H)$/i.test(p)) || '';
-      const unitType = unitTypeRaw.toLowerCase();
+      // Match unit to MuleSoft data by hotspot folder → aldar_unit_number
+      const folderNorm = folder.toLowerCase();
+      const msUnit = mulesoftUnits.find((u) => {
+        const unitSuffix = u.aldar_unit_number.split('-').slice(-3).join('-').toLowerCase();
+        return unitSuffix === folderNorm || folderNorm.includes(unitSuffix);
+      });
 
-      // Find collision files matching this unit type
-      const matchingCollisions = scan.collisionFiles.filter((f) =>
-        f.toLowerCase().includes(`_${unitType}_`),
-      );
-      const collisionFile = matchingCollisions[0] || '';
+      const mirror = msUnit?.mirror || 'NORMAL';
 
-      // Find CSV camera files matching this unit type
-      const matchingCsvs = scan.csvCameraFiles.filter((f) =>
-        f.toLowerCase().includes(`_${unitType}_`),
-      );
-      const csvCameraFile = matchingCsvs[0] || '';
+      let collisionFile = '';
+      let csvCameraFile = '';
+
+      if (msUnit) {
+        const variantCodes = getUnitVariantCode(msUnit);
+        const searchCode = variantCodes.code;
+        const flippedSearchCode = variantCodes.flippedCode;
+
+        collisionFile = scan.collisionFiles.find((f) =>
+          f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedSearchCode),
+        ) || '';
+
+        csvCameraFile = scan.csvCameraFiles.find((f) =>
+          f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedSearchCode),
+        ) || '';
+      } else {
+        const folderParts = folder.split('-');
+        const unitTypeRaw = folderParts.find((p) => /^(TH|V|A|PH|SV|TX|H)$/i.test(p)) || '';
+        const unitType = unitTypeRaw.toLowerCase();
+        collisionFile = scan.collisionFiles.find((f) => f.toLowerCase().includes(`_${unitType}_`)) || '';
+        csvCameraFile = scan.csvCameraFiles.find((f) => f.toLowerCase().includes(`_${unitType}_`)) || '';
+      }
 
       const errors: string[] = [];
       if (!collisionFile) errors.push('No collision GLB');
       if (!csvCameraFile) errors.push('No CSV camera');
+      if (!msUnit && mulesoftLoaded) errors.push('No MuleSoft match');
 
       units.push({
         code,
@@ -139,7 +231,7 @@ export default function InteriorGeneratorPage() {
         hotspotImages: images,
         roomCount: roomKeys.size,
         imageCount: schemeImages.length,
-        mirror: 'NORMAL',
+        mirror,
         unitId: '',
         tower, floor, unitNumber: unitNum,
         floorPart: '0',
@@ -256,6 +348,63 @@ export default function InteriorGeneratorPage() {
                   className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
+
+            <div className="border-t border-slate-200 pt-5 mt-2">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Download size={16} /> MuleSoft Unit Data</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">DB Project</label>
+                  <select value={selectedDbProject} onChange={(e) => { setSelectedDbProject(e.target.value); setMulesoftLoaded(false); setMulesoftUnits([]); }}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">— Select project —</option>
+                    {dbProjects.map((p) => <option key={p.Id} value={p.Id}>{p.Title} ({p.Code})</option>)}
+                  </select>
+                  {selectedDbProjectData && (
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      Community: <span className="font-mono text-slate-700">{communityName}</span>
+                      {selectedDbProjectData.CommunityKey && <span className="ml-2">Key: <span className="font-mono text-slate-700">{selectedDbProjectData.CommunityKey}</span></span>}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Environment</label>
+                  <select value={selectedEnv} onChange={(e) => setSelectedEnv(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    {mulesoftEnvs.length === 0 && <option value="">No envs configured</option>}
+                    {mulesoftEnvs.map((env) => <option key={env} value={env}>{env}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button onClick={handleLoadMulesoft} disabled={loadingMulesoft || !selectedEnv || !communityName}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                    <Download size={14} /> {loadingMulesoft ? 'Loading...' : 'Load Units'}
+                  </button>
+                </div>
+              </div>
+              {mulesoftLoaded && (
+                <div className="mt-2 text-xs text-emerald-600 font-medium">
+                  {mulesoftUnits.length} units loaded from MuleSoft ({selectedEnv})
+                </div>
+              )}
+              {mulesoftError && (
+                <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 flex items-center gap-1">
+                  <AlertCircle size={12} /> {mulesoftError}
+                </div>
+              )}
+              {mulesoftDebug && (
+                <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded text-[10px] font-mono text-slate-600 space-y-0.5">
+                  {Object.entries(mulesoftDebug).map(([env, info]) => (
+                    <div key={env}>
+                      <span className="font-semibold text-slate-700">{env}:</span>{' '}
+                      endpoint=<span className="text-blue-600">{info.endpoint}</span>{' '}
+                      client_id=<span className="text-purple-600">{info.clientIdPrefix}</span>{' '}
+                      body=<span className="text-emerald-600">{JSON.stringify(info.body)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {scanError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700 flex items-center gap-2"><AlertCircle size={16} /> {scanError}</div>}
             <button onClick={handleScan} disabled={scanning || !projectFolderPath}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
@@ -297,6 +446,7 @@ export default function InteriorGeneratorPage() {
                       <th className="text-left px-3 py-2 font-medium text-slate-600">Folder</th>
                       <th className="text-center px-3 py-2 font-medium text-slate-600">Rooms</th>
                       <th className="text-center px-3 py-2 font-medium text-slate-600">Images</th>
+                      <th className="text-center px-3 py-2 font-medium text-slate-600">Mirror</th>
                       <th className="text-left px-3 py-2 font-medium text-slate-600">Collision</th>
                       <th className="text-left px-3 py-2 font-medium text-slate-600">CSV Camera</th>
                     </tr>
@@ -311,6 +461,9 @@ export default function InteriorGeneratorPage() {
                         <td className="px-3 py-2 font-mono text-indigo-600" title={`${unit.hotspotImages.length} total images`}><span className="cursor-help">{unit.hotspotFolder}</span></td>
                         <td className="text-center px-3 py-2 text-slate-500">{unit.roomCount}</td>
                         <td className="text-center px-3 py-2 text-slate-500">{unit.imageCount}</td>
+                        <td className="text-center px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${unit.mirror === 'MIRROR' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{unit.mirror}</span>
+                        </td>
                         <td className="px-3 py-2 text-slate-500 max-w-[150px]" title={unit.collisionFile || 'Not set'}>
                           <span className="block truncate cursor-help">{unit.collisionFile || <span className="text-slate-300">—</span>}</span>
                         </td>

@@ -128,7 +128,17 @@ export default function FloorplanGeneratorPage() {
         (f) => f.includes(baseName),
       );
 
-      const code = `${projectCode}_${baseName}`;
+      let code = `${projectCode}_${baseName}`;
+      const dashParts = baseName.split('-');
+      if (dashParts.length >= 3) {
+        const tower = dashParts[0];
+        const floor = dashParts[1];
+        const rest = dashParts.slice(2).join('-');
+        const unitSchemeMatch = rest.match(/^(\d+)_(.+)$/);
+        if (unitSchemeMatch) {
+          code = `${projectCode}_${tower}-${parseInt(floor) || floor}${unitSchemeMatch[1]}_${unitSchemeMatch[2]}`;
+        }
+      }
 
       units.push({
         csvFile,

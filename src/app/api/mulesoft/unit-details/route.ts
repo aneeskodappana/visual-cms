@@ -131,9 +131,22 @@ export async function POST(request: NextRequest) {
       console.log(`${env}: ${units.length} units`);
     });
 
+    const debug: Record<string, { endpoint: string; clientIdPrefix: string; body: object }> = {};
+    for (const env of environments) {
+      const envUpper = env.toUpperCase();
+      const clientId = process.env[`MULESOFT_${envUpper}_CLIENT_ID`] || '';
+      const endpoint = process.env[`MULESOFT_${envUpper}_ENDPOINT`] || '';
+      debug[env] = {
+        endpoint: endpoint || '(not configured)',
+        clientIdPrefix: clientId ? `${clientId.substring(0, 8)}...` : '(not configured)',
+        body: { PV_Community_Name: communityName },
+      };
+    }
+
     return NextResponse.json({
       status: 'success',
       data: results,
+      debug,
       ...(Object.keys(errors).length > 0 && { errors }),
     });
   } catch (error) {
