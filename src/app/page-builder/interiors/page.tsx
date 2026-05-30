@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, Suspense } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
@@ -66,6 +66,36 @@ interface MatchedUnit {
 
 type CollisionMatchMode = 'fuzzy' | 'exact';
 type CsvCameraMatchMode = 'fuzzy' | 'exact';
+
+function findCollisionFile(scan: ScanResult, searchCode: string, flippedCode: string, mode: CollisionMatchMode): string {
+  if (mode === 'exact') {
+    return scan.collisionFiles.find((f) =>
+      f === `model_360-collision_${searchCode}_0.glb` || f === `model_360-collision_${flippedCode}_0.glb`,
+    ) || '';
+  }
+  return scan.collisionFiles.find((f) =>
+    f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedCode),
+  ) || '';
+}
+
+function findCsvCameraFile(scan: ScanResult, searchCode: string, flippedCode: string, scheme: string, mode: CsvCameraMatchMode): string {
+  const schemePart = scheme.split('_')[0];
+  if (mode === 'exact') {
+    return scan.csvCameraFiles.find((f) =>
+      f === `csv_camera_${searchCode}_${schemePart}.csv` || f === `csv_camera_${flippedCode}_${schemePart}.csv`,
+    ) || '';
+  }
+  return scan.csvCameraFiles.find((f) =>
+    f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedCode),
+  ) || '';
+}
+
+const MATCH_COMBOS: { col: CollisionMatchMode; csv: CsvCameraMatchMode; label: string }[] = [
+  { col: 'fuzzy', csv: 'fuzzy', label: 'Collision: Fuzzy, CSV: Fuzzy' },
+  { col: 'fuzzy', csv: 'exact', label: 'Collision: Fuzzy, CSV: Exact' },
+  { col: 'exact', csv: 'fuzzy', label: 'Collision: Exact, CSV: Fuzzy' },
+  { col: 'exact', csv: 'exact', label: 'Collision: Exact, CSV: Exact' },
+];
 
 type Step = 'config' | 'match' | 'generate';
 
@@ -151,16 +181,32 @@ function InteriorGeneratorPage() {
       .then((json) => { if (json.status === 'success') setDbProjects(json.data); });
 
     const saved = ssGet<{
-      scanResult: ScanResult | null; matchedUnits: MatchedUnit[]; sql: string;
-      genStats: typeof genStats; comboResults: typeof comboResults;
-      mulesoftUnits: MulesoftUnit[]; mulesoftLoaded: boolean;
+      scanResult: ScanResult | null;
+      sql: string;
+      genStats: typeof genStats;
+      mulesoftUnits: MulesoftUnit[];
+      mulesoftLoaded: boolean;
+      collisionMatchMode: CollisionMatchMode;
+      csvCameraMatchMode: CsvCameraMatchMode;
+      selectedSchemes: string[];
+      autoDuplexScheme: boolean;
+      hotspotNesting: 'flat' | 'nested';
+      skipBalcony: boolean;
+      balconyException: string;
     }>('state');
     if (saved && initialStep !== 'config') {
       if (saved.scanResult) setScanResult(saved.scanResult);
-      if (saved.matchedUnits?.length) setMatchedUnits(saved.matchedUnits);
       if (saved.sql) setSql(saved.sql);
       if (saved.genStats) setGenStats(saved.genStats);
       if (saved.mulesoftUnits?.length) { setMulesoftUnits(saved.mulesoftUnits); setMulesoftLoaded(true); }
+      if (saved.mulesoftLoaded) setMulesoftLoaded(saved.mulesoftLoaded);
+      if (saved.collisionMatchMode) setCollisionMatchMode(saved.collisionMatchMode);
+      if (saved.csvCameraMatchMode) setCsvCameraMatchMode(saved.csvCameraMatchMode);
+      if (saved.selectedSchemes?.length) setSelectedSchemes(saved.selectedSchemes);
+      if (saved.autoDuplexScheme !== undefined) setAutoDuplexScheme(saved.autoDuplexScheme);
+      if (saved.hotspotNesting) setHotspotNesting(saved.hotspotNesting);
+      if (saved.skipBalcony !== undefined) setSkipBalcony(saved.skipBalcony);
+      if (saved.balconyException !== undefined) setBalconyException(saved.balconyException);
     }
   }, []);
 
@@ -212,37 +258,13 @@ function InteriorGeneratorPage() {
       const json = await res.json();
       if (json.status === 'success') {
         setScanResult(json.data);
-        autoMatch(json.data);
         setStep('match');
       } else { setScanError(json.error); }
     } catch (e) { setScanError(e instanceof Error ? e.message : 'Scan failed'); }
     finally { setScanning(false); }
   }, [projectFolderPath, hotspotSubfolder, collisionSubfolder, csvCameraSubfolder]);
 
-  const findCollisionFile = (scan: ScanResult, searchCode: string, flippedCode: string, mode: CollisionMatchMode): string => {
-    if (mode === 'exact') {
-      return scan.collisionFiles.find((f) =>
-        f === `model_360-collision_${searchCode}_0.glb` || f === `model_360-collision_${flippedCode}_0.glb`,
-      ) || '';
-    }
-    return scan.collisionFiles.find((f) =>
-      f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedCode),
-    ) || '';
-  };
-
-  const findCsvCameraFile = (scan: ScanResult, searchCode: string, flippedCode: string, scheme: string, mode: CsvCameraMatchMode): string => {
-    const schemePart = scheme.split('_')[0];
-    if (mode === 'exact') {
-      return scan.csvCameraFiles.find((f) =>
-        f === `csv_camera_${searchCode}_${schemePart}.csv` || f === `csv_camera_${flippedCode}_${schemePart}.csv`,
-      ) || '';
-    }
-    return scan.csvCameraFiles.find((f) =>
-      f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedCode),
-    ) || '';
-  };
-
-  const runMatch = (scan: ScanResult, colMode: CollisionMatchMode, csvMode: CsvCameraMatchMode): MatchedUnit[] => {
+  const runMatch = useCallback((scan: ScanResult, colMode: CollisionMatchMode, csvMode: CsvCameraMatchMode): MatchedUnit[] => {
     const units: MatchedUnit[] = [];
 
     scan.hotspotFolders.forEach((folder) => {
@@ -308,51 +330,41 @@ function InteriorGeneratorPage() {
     });
 
     return units;
-  };
-
-  const MATCH_COMBOS: { col: CollisionMatchMode; csv: CsvCameraMatchMode; label: string }[] = [
-    { col: 'fuzzy', csv: 'fuzzy', label: 'Collision: Fuzzy, CSV: Fuzzy' },
-    { col: 'fuzzy', csv: 'exact', label: 'Collision: Fuzzy, CSV: Exact' },
-    { col: 'exact', csv: 'fuzzy', label: 'Collision: Exact, CSV: Fuzzy' },
-    { col: 'exact', csv: 'exact', label: 'Collision: Exact, CSV: Exact' },
-  ];
+  }, [mulesoftUnits, selectedSchemes, autoDuplexScheme, projectCode, mulesoftLoaded]);
 
   useEffect(() => {
-    ssSet('state', { scanResult, matchedUnits, sql, genStats, mulesoftUnits, mulesoftLoaded });
-  }, [scanResult, matchedUnits, sql, genStats]);
+    ssSet('state', {
+      scanResult, matchedUnits, sql, genStats,
+      mulesoftUnits, mulesoftLoaded,
+      collisionMatchMode, csvCameraMatchMode,
+      selectedSchemes, autoDuplexScheme, hotspotNesting,
+      skipBalcony, balconyException,
+    });
+  }, [scanResult, matchedUnits, sql, genStats, mulesoftUnits, mulesoftLoaded, collisionMatchMode, csvCameraMatchMode, selectedSchemes, autoDuplexScheme, hotspotNesting, skipBalcony, balconyException]);
 
-  const comboResults = scanResult ? MATCH_COMBOS.map((combo) => {
-    const trial = runMatch(scanResult, combo.col, combo.csv);
-    return {
-      ...combo,
-      collisionHits: trial.filter((u) => u.collisionFile).length,
-      csvHits: trial.filter((u) => u.csvCameraFile).length,
-      total: trial.length,
-    };
-  }) : [];
+  const comboResults = useMemo(() => {
+    if (!scanResult) return [];
+    return MATCH_COMBOS.map((combo) => {
+      const trial = runMatch(scanResult, combo.col, combo.csv);
+      return {
+        ...combo,
+        collisionHits: trial.filter((u) => u.collisionFile).length,
+        csvHits: trial.filter((u) => u.csvCameraFile).length,
+        total: trial.length,
+      };
+    });
+  }, [scanResult, runMatch]);
 
-  const autoMatch = (scan: ScanResult) => {
-    const units = runMatch(scan, collisionMatchMode, csvCameraMatchMode);
-    setMatchedUnits(units);
-  };
-
-  const prevMulesoftCountRef = useRef(mulesoftUnits.length);
   useEffect(() => {
-    if (mulesoftUnits.length !== prevMulesoftCountRef.current && scanResult) {
-      prevMulesoftCountRef.current = mulesoftUnits.length;
-      const units = runMatch(scanResult, collisionMatchMode, csvCameraMatchMode);
-      setMatchedUnits(units);
+    if (scanResult) {
+      setMatchedUnits(runMatch(scanResult, collisionMatchMode, csvCameraMatchMode));
     }
-  }, [mulesoftUnits, scanResult]);
+  }, [scanResult, runMatch, collisionMatchMode, csvCameraMatchMode]);
 
-  const applyCombo = (col: CollisionMatchMode, csv: CsvCameraMatchMode) => {
+  const applyCombo = useCallback((col: CollisionMatchMode, csv: CsvCameraMatchMode) => {
     setCollisionMatchMode(col);
     setCsvCameraMatchMode(csv);
-    if (scanResult) {
-      const units = runMatch(scanResult, col, csv);
-      setMatchedUnits(units);
-    }
-  };
+  }, []);
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
@@ -371,7 +383,7 @@ function InteriorGeneratorPage() {
       else alert(json.error);
     } catch (e) { alert(e instanceof Error ? e.message : 'Failed'); }
     finally { setGenerating(false); }
-  }, [matchedUnits, scanResult, cdnBaseUrl, hotspotSubfolder, collisionSubfolder, mediaVersion]);
+  }, [matchedUnits, scanResult, cdnBaseUrl, hotspotSubfolder, collisionSubfolder, mediaVersion, skipBalcony, balconyException]);
 
   const handleCopy = () => { navigator.clipboard.writeText(sql); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   const matchedCount = matchedUnits.filter((u) => u.matched).length;
