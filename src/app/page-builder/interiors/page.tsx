@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, FolderSearch, FileText, Zap, Copy, Check, AlertCircle, ChevronDown, ChevronUp, Box, Download,
 } from 'lucide-react';
@@ -63,10 +64,39 @@ interface MatchedUnit {
   matched: boolean; error?: string;
 }
 
+type CollisionMatchMode = 'fuzzy' | 'exact';
+type CsvCameraMatchMode = 'fuzzy' | 'exact';
+
 type Step = 'config' | 'match' | 'generate';
 
-export default function InteriorGeneratorPage() {
-  const [step, setStep] = useState<Step>('config');
+const SS_KEY = 'interior-gen';
+function ssGet<T>(key: string): T | null {
+  try { const v = sessionStorage.getItem(`${SS_KEY}-${key}`); return v ? JSON.parse(v) : null; } catch { return null; }
+}
+function ssSet(key: string, value: unknown) {
+  try { sessionStorage.setItem(`${SS_KEY}-${key}`, JSON.stringify(value)); } catch {}
+}
+
+export default function InteriorGeneratorPageWrapper() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8 flex items-center justify-center text-slate-400">Loading...</div>}>
+      <InteriorGeneratorPage />
+    </Suspense>
+  );
+}
+
+function InteriorGeneratorPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialStep = (searchParams.get('step') as Step) || 'config';
+  const [step, _setStep] = useState<Step>(initialStep);
+  const setStep = useCallback((s: Step) => {
+    _setStep(s);
+    const url = new URL(window.location.href);
+    if (s === 'config') url.searchParams.delete('step');
+    else url.searchParams.set('step', s);
+    router.replace(url.pathname + url.search, { scroll: false });
+  }, [router]);
   const [availableProjects, setAvailableProjects] = useState<ProjectInfo[]>([]);
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -78,6 +108,14 @@ export default function InteriorGeneratorPage() {
   const [cdnBaseUrl, setCdnBaseUrl] = useState('');
   const [projectCode, setProjectCode] = useState('');
   const [mediaVersion, setMediaVersion] = useState(17);
+
+  const [collisionMatchMode, setCollisionMatchMode] = useState<CollisionMatchMode>('fuzzy');
+  const [csvCameraMatchMode, setCsvCameraMatchMode] = useState<CsvCameraMatchMode>('fuzzy');
+  const [selectedSchemes, setSelectedSchemes] = useState<string[]>(['s1_0']);
+  const [autoDuplexScheme, setAutoDuplexScheme] = useState(true);
+  const [hotspotNesting, setHotspotNesting] = useState<'flat' | 'nested'>('flat');
+  const [skipBalcony, setSkipBalcony] = useState(false);
+  const [balconyException, setBalconyException] = useState('');
 
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -111,6 +149,19 @@ export default function InteriorGeneratorPage() {
     fetch('/api/projects?limit=200')
       .then((r) => r.json())
       .then((json) => { if (json.status === 'success') setDbProjects(json.data); });
+
+    const saved = ssGet<{
+      scanResult: ScanResult | null; matchedUnits: MatchedUnit[]; sql: string;
+      genStats: typeof genStats; comboResults: typeof comboResults;
+      mulesoftUnits: MulesoftUnit[]; mulesoftLoaded: boolean;
+    }>('state');
+    if (saved && initialStep !== 'config') {
+      if (saved.scanResult) setScanResult(saved.scanResult);
+      if (saved.matchedUnits?.length) setMatchedUnits(saved.matchedUnits);
+      if (saved.sql) setSql(saved.sql);
+      if (saved.genStats) setGenStats(saved.genStats);
+      if (saved.mulesoftUnits?.length) { setMulesoftUnits(saved.mulesoftUnits); setMulesoftLoaded(true); }
+    }
   }, []);
 
   const selectedDbProjectData = dbProjects.find((p) => p.Id === selectedDbProject);
@@ -168,9 +219,31 @@ export default function InteriorGeneratorPage() {
     finally { setScanning(false); }
   }, [projectFolderPath, hotspotSubfolder, collisionSubfolder, csvCameraSubfolder]);
 
-  const autoMatch = (scan: ScanResult) => {
+  const findCollisionFile = (scan: ScanResult, searchCode: string, flippedCode: string, mode: CollisionMatchMode): string => {
+    if (mode === 'exact') {
+      return scan.collisionFiles.find((f) =>
+        f === `model_360-collision_${searchCode}_0.glb` || f === `model_360-collision_${flippedCode}_0.glb`,
+      ) || '';
+    }
+    return scan.collisionFiles.find((f) =>
+      f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedCode),
+    ) || '';
+  };
+
+  const findCsvCameraFile = (scan: ScanResult, searchCode: string, flippedCode: string, scheme: string, mode: CsvCameraMatchMode): string => {
+    const schemePart = scheme.split('_')[0];
+    if (mode === 'exact') {
+      return scan.csvCameraFiles.find((f) =>
+        f === `csv_camera_${searchCode}_${schemePart}.csv` || f === `csv_camera_${flippedCode}_${schemePart}.csv`,
+      ) || '';
+    }
+    return scan.csvCameraFiles.find((f) =>
+      f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedCode),
+    ) || '';
+  };
+
+  const runMatch = (scan: ScanResult, colMode: CollisionMatchMode, csvMode: CsvCameraMatchMode): MatchedUnit[] => {
     const units: MatchedUnit[] = [];
-    const defaultScheme = 's1_0';
 
     scan.hotspotFolders.forEach((folder) => {
       const images = scan.hotspotDetails[folder] || [];
@@ -181,12 +254,6 @@ export default function InteriorGeneratorPage() {
       const floor = parts[1] || '';
       const unitNum = parts[2] || '';
 
-      const schemeImages = images.filter((img) => img.includes(defaultScheme));
-      const roomKeys = new Set(schemeImages.map((img) => img.split('_').at(-2)?.toLowerCase()).filter(Boolean));
-
-      const code = `${projectCode}_${tower}-${parseInt(floor) || floor}${unitNum}_${defaultScheme}`;
-
-      // Match unit to MuleSoft data by hotspot folder → aldar_unit_number
       const folderNorm = folder.toLowerCase();
       const msUnit = mulesoftUnits.find((u) => {
         const unitSuffix = u.aldar_unit_number.split('-').slice(-3).join('-').toLowerCase();
@@ -194,54 +261,97 @@ export default function InteriorGeneratorPage() {
       });
 
       const mirror = msUnit?.mirror || 'NORMAL';
+      const isDuplex = msUnit?.unit_type === 'Duplex' || msUnit?.unit_category?.toLowerCase().includes('duplex');
 
-      let collisionFile = '';
-      let csvCameraFile = '';
-
-      if (msUnit) {
-        const variantCodes = getUnitVariantCode(msUnit);
-        const searchCode = variantCodes.code;
-        const flippedSearchCode = variantCodes.flippedCode;
-
-        collisionFile = scan.collisionFiles.find((f) =>
-          f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedSearchCode),
-        ) || '';
-
-        csvCameraFile = scan.csvCameraFiles.find((f) =>
-          f.toLowerCase().includes(searchCode) || f.toLowerCase().includes(flippedSearchCode),
-        ) || '';
-      } else {
-        const folderParts = folder.split('-');
-        const unitTypeRaw = folderParts.find((p) => /^(TH|V|A|PH|SV|TX|H)$/i.test(p)) || '';
-        const unitType = unitTypeRaw.toLowerCase();
-        collisionFile = scan.collisionFiles.find((f) => f.toLowerCase().includes(`_${unitType}_`)) || '';
-        csvCameraFile = scan.csvCameraFiles.find((f) => f.toLowerCase().includes(`_${unitType}_`)) || '';
+      let schemes = [...selectedSchemes];
+      if (autoDuplexScheme && isDuplex && !schemes.includes('s1_1')) {
+        schemes.push('s1_1');
       }
 
-      const errors: string[] = [];
-      if (!collisionFile) errors.push('No collision GLB');
-      if (!csvCameraFile) errors.push('No CSV camera');
-      if (!msUnit && mulesoftLoaded) errors.push('No MuleSoft match');
+      for (const scheme of schemes) {
+        const schemeImages = images.filter((img) => img.includes(scheme));
+        const roomKeys = new Set(schemeImages.map((img) => img.split('_').at(-2)?.toLowerCase()).filter(Boolean));
 
-      units.push({
-        code,
-        hotspotFolder: folder,
-        collisionFile,
-        csvCameraFile,
-        hotspotImages: images,
-        roomCount: roomKeys.size,
-        imageCount: schemeImages.length,
-        mirror,
-        unitId: '',
-        tower, floor, unitNumber: unitNum,
-        floorPart: '0',
-        schemeFilter: defaultScheme,
-        matched: schemeImages.length > 0,
-        error: errors.length > 0 ? errors.join(', ') : undefined,
-      });
+        const code = `${projectCode}_${tower}-${parseInt(floor) || floor}${unitNum}_${scheme}`;
+
+        let collisionFile = '';
+        let csvCameraFile = '';
+
+        if (msUnit) {
+          const variantCodes = getUnitVariantCode(msUnit);
+          collisionFile = findCollisionFile(scan, variantCodes.code, variantCodes.flippedCode, colMode);
+          csvCameraFile = findCsvCameraFile(scan, variantCodes.code, variantCodes.flippedCode, scheme, csvMode);
+        } else {
+          const folderParts = folder.split('-');
+          const unitTypeRaw = folderParts.find((p) => /^(TH|V|A|PH|SV|TX|H)$/i.test(p)) || '';
+          const unitType = unitTypeRaw.toLowerCase();
+          collisionFile = scan.collisionFiles.find((f) => f.toLowerCase().includes(`_${unitType}_`)) || '';
+          csvCameraFile = scan.csvCameraFiles.find((f) => f.toLowerCase().includes(`_${unitType}_`)) || '';
+        }
+
+        const errors: string[] = [];
+        if (!collisionFile) errors.push('No collision GLB');
+        if (!csvCameraFile) errors.push('No CSV camera');
+        if (!msUnit && mulesoftLoaded) errors.push('No MuleSoft match');
+        if (schemeImages.length === 0) errors.push(`No images for ${scheme}`);
+
+        const floorPart = scheme.split('_')[1] || '0';
+
+        units.push({
+          code, hotspotFolder: folder, collisionFile, csvCameraFile,
+          hotspotImages: images, roomCount: roomKeys.size, imageCount: schemeImages.length,
+          mirror, unitId: '', tower, floor, unitNumber: unitNum, floorPart,
+          schemeFilter: scheme, matched: schemeImages.length > 0,
+          error: errors.length > 0 ? errors.join(', ') : undefined,
+        });
+      }
     });
 
+    return units;
+  };
+
+  const MATCH_COMBOS: { col: CollisionMatchMode; csv: CsvCameraMatchMode; label: string }[] = [
+    { col: 'fuzzy', csv: 'fuzzy', label: 'Collision: Fuzzy, CSV: Fuzzy' },
+    { col: 'fuzzy', csv: 'exact', label: 'Collision: Fuzzy, CSV: Exact' },
+    { col: 'exact', csv: 'fuzzy', label: 'Collision: Exact, CSV: Fuzzy' },
+    { col: 'exact', csv: 'exact', label: 'Collision: Exact, CSV: Exact' },
+  ];
+
+  useEffect(() => {
+    ssSet('state', { scanResult, matchedUnits, sql, genStats, mulesoftUnits, mulesoftLoaded });
+  }, [scanResult, matchedUnits, sql, genStats]);
+
+  const comboResults = scanResult ? MATCH_COMBOS.map((combo) => {
+    const trial = runMatch(scanResult, combo.col, combo.csv);
+    return {
+      ...combo,
+      collisionHits: trial.filter((u) => u.collisionFile).length,
+      csvHits: trial.filter((u) => u.csvCameraFile).length,
+      total: trial.length,
+    };
+  }) : [];
+
+  const autoMatch = (scan: ScanResult) => {
+    const units = runMatch(scan, collisionMatchMode, csvCameraMatchMode);
     setMatchedUnits(units);
+  };
+
+  const prevMulesoftCountRef = useRef(mulesoftUnits.length);
+  useEffect(() => {
+    if (mulesoftUnits.length !== prevMulesoftCountRef.current && scanResult) {
+      prevMulesoftCountRef.current = mulesoftUnits.length;
+      const units = runMatch(scanResult, collisionMatchMode, csvCameraMatchMode);
+      setMatchedUnits(units);
+    }
+  }, [mulesoftUnits, scanResult]);
+
+  const applyCombo = (col: CollisionMatchMode, csv: CsvCameraMatchMode) => {
+    setCollisionMatchMode(col);
+    setCsvCameraMatchMode(csv);
+    if (scanResult) {
+      const units = runMatch(scanResult, col, csv);
+      setMatchedUnits(units);
+    }
   };
 
   const handleGenerate = useCallback(async () => {
@@ -253,6 +363,7 @@ export default function InteriorGeneratorPage() {
         body: JSON.stringify({
           units: valid, hotspotBasePath: scanResult?.hotspotPath, csvCameraBasePath: scanResult?.csvCameraPath,
           cdnBaseUrl, hotspotSubfolder, collisionSubfolder, mediaVersion,
+          skipBalcony, balconyException,
         }),
       });
       const json = await res.json();
@@ -350,6 +461,70 @@ export default function InteriorGeneratorPage() {
             </div>
 
             <div className="border-t border-slate-200 pt-5 mt-2">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">Matching Rules</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Collision File Match</label>
+                  <select value={collisionMatchMode} onChange={(e) => setCollisionMatchMode(e.target.value as CollisionMatchMode)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="fuzzy">Fuzzy (includes code)</option>
+                    <option value="exact">Exact (model_360-collision_CODE_0.glb)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">CSV Camera File Match</label>
+                  <select value={csvCameraMatchMode} onChange={(e) => setCsvCameraMatchMode(e.target.value as CsvCameraMatchMode)}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="fuzzy">Fuzzy (includes code)</option>
+                    <option value="exact">Exact (csv_camera_CODE_SCHEME.csv)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Hotspot Folder Layout</label>
+                  <select value={hotspotNesting} onChange={(e) => setHotspotNesting(e.target.value as 'flat' | 'nested')}
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="flat">Flat (image_360.../b1-01-01/)</option>
+                    <option value="nested">Nested by cluster (image_360.../r20/r20-01-01/)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Scheme Variations</label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {['s1_0', 's1_1', 's2_0', 's2_1'].map((s) => (
+                      <label key={s} className="inline-flex items-center gap-1 text-xs cursor-pointer">
+                        <input type="checkbox" checked={selectedSchemes.includes(s)}
+                          onChange={(e) => setSelectedSchemes((prev) => e.target.checked ? [...prev, s] : prev.filter((x) => x !== s))}
+                          className="rounded border-slate-300" />
+                        <span className="font-mono">{s}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <label className="inline-flex items-center gap-1.5 text-[10px] text-slate-500 mt-1.5 cursor-pointer">
+                    <input type="checkbox" checked={autoDuplexScheme} onChange={(e) => setAutoDuplexScheme(e.target.checked)} className="rounded border-slate-300" />
+                    Auto-add s1_1 for Duplex units
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Balcony Hotspot</label>
+                  <label className="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="checkbox" checked={skipBalcony} onChange={(e) => setSkipBalcony(e.target.checked)} className="rounded border-slate-300" />
+                    Skip balcony rooms
+                  </label>
+                  {skipBalcony && (
+                    <div className="mt-1.5">
+                      <input type="text" value={balconyException} onChange={(e) => setBalconyException(e.target.value)}
+                        placeholder="Exception tower (e.g. B1)"
+                        className="w-full px-2 py-1 text-xs border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono" />
+                      <div className="text-[10px] text-slate-400 mt-0.5">Keep balcony for units in this tower</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 pt-5 mt-2">
               <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2"><Download size={16} /> MuleSoft Unit Data</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -406,7 +581,12 @@ export default function InteriorGeneratorPage() {
             </div>
 
             {scanError && <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700 flex items-center gap-2"><AlertCircle size={16} /> {scanError}</div>}
-            <button onClick={handleScan} disabled={scanning || !projectFolderPath}
+            {!mulesoftLoaded && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-center gap-2">
+                <AlertCircle size={16} /> Load MuleSoft data before scanning to enable collision/CSV matching.
+              </div>
+            )}
+            <button onClick={handleScan} disabled={scanning || !projectFolderPath || !mulesoftLoaded}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
               <FolderSearch size={16} /> {scanning ? 'Scanning...' : 'Scan Folder'}
             </button>
@@ -436,6 +616,37 @@ export default function InteriorGeneratorPage() {
                   <li><code className="bg-blue-100 px-1 rounded">mirror</code> field determines model scale (NORMAL → positive X, MIRROR → negative X)</li>
                 </ol>
               </div>
+
+              {comboResults.length > 0 && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs font-semibold text-amber-800 mb-2">
+                    {matchedUnits.some((u) => !u.collisionFile || !u.csvCameraFile)
+                      ? 'Some units have no Collision or CSV match. Try a different matching rule combination:'
+                      : 'All units matched. Verify your matching rule combination:'}
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {comboResults.map((r, i) => {
+                      const isActive = r.col === collisionMatchMode && r.csv === csvCameraMatchMode;
+                      const maxScore = Math.max(...comboResults.map((x) => x.collisionHits + x.csvHits));
+                      const bestCount = comboResults.filter((x) => x.collisionHits + x.csvHits === maxScore).length;
+                      const isBest = bestCount < comboResults.length && r.collisionHits + r.csvHits === maxScore;
+                      return (
+                        <button key={i} onClick={() => applyCombo(r.col, r.csv)}
+                          className={`p-2 rounded-lg border text-left text-[10px] transition-colors ${isActive ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-400' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                          <div className="font-semibold text-slate-700 flex items-center gap-1">
+                            {r.label}
+                            {isBest && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 rounded">BEST</span>}
+                          </div>
+                          <div className="mt-1 flex gap-2 text-slate-500">
+                            <span>GLB: <span className={r.collisionHits === r.total ? 'text-emerald-600 font-medium' : 'text-rose-600 font-medium'}>{r.collisionHits}/{r.total}</span></span>
+                            <span>CSV: <span className={r.csvHits === r.total ? 'text-emerald-600 font-medium' : 'text-rose-600 font-medium'}>{r.csvHits}/{r.total}</span></span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="max-h-[500px] overflow-y-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-xs">

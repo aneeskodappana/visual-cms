@@ -63,6 +63,8 @@ export async function POST(request: NextRequest) {
       hotspotSubfolder,
       collisionSubfolder,
       mediaVersion = 17,
+      skipBalcony = true,
+      balconyException = '',
     }: {
       units: InteriorUnit[];
       hotspotBasePath: string;
@@ -71,7 +73,17 @@ export async function POST(request: NextRequest) {
       hotspotSubfolder: string;
       collisionSubfolder: string;
       mediaVersion: number;
+      skipBalcony: boolean;
+      balconyException: string;
     } = body;
+
+    const shouldSkipRoom = (roomKey: string, tower: string): boolean => {
+      if (!skipBalcony) return false;
+      const isBalcony = roomKey.toLowerCase().includes('balcony');
+      if (!isBalcony) return false;
+      if (balconyException && tower.toLowerCase() === balconyException.toLowerCase()) return false;
+      return true;
+    };
 
     if (!units || units.length === 0) {
       return NextResponse.json({ status: 'error', error: 'No units provided' }, { status: 400 });
@@ -140,7 +152,7 @@ export async function POST(request: NextRequest) {
         // HotspotGroups + Hotspots
         let hotspotIndex = 0;
         roomKeys.forEach((roomKey, groupIdx) => {
-          if (SKIPPABLE.some((s) => roomKey.includes(s))) return;
+          if (shouldSkipRoom(roomKey, unit.tower)) return;
 
           const groupId = uuidv4();
           const groupName = HOTSPOT_NAMES[roomKey] || roomKey.replace(/([a-z])([A-Z0-9])/g, '$1 $2');
