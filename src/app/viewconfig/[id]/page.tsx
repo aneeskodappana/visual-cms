@@ -1249,7 +1249,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-[calc(100vh-4rem)] bg-gray-50 flex items-center justify-center">
         <div className="text-gray-600">Loading...</div>
       </div>
     );
@@ -1257,7 +1257,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
   if (error || !viewConfig) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
+      <div className="min-h-[calc(100vh-4rem)] bg-gray-50 p-6">
         <Link href="/viewconfig-search" className="text-blue-600 hover:text-blue-700 flex items-center gap-2 mb-4">
           <ChevronLeft size={20} /> Back to Search
         </Link>
@@ -1272,10 +1272,10 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const backplateUrl = constructCdnUrl(layout2d?.BackplateUrl, viewConfig.CdnBaseUrl);
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-gray-900 relative">
+    <div className="relative h-[calc(100vh-4rem)] w-full overflow-hidden bg-gray-900">
       {/* Floating Draggable Header Panel */}
       <div
-        className="fixed z-40 select-none"
+        className="absolute z-40 select-none"
         style={{ left: headerPos.x, top: headerPos.y }}
       >
         <div className={`rounded-lg shadow-xl border backdrop-blur-sm ${isEditMode ? 'border-orange-400 bg-orange-50/95' : 'border-gray-300 bg-white/95'}`}>
@@ -1397,7 +1397,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
 
       {/* Floating Layout2D Selector */}
       {viewConfig.Layout2Ds && viewConfig.Layout2Ds.length > 1 && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-30 bg-white/90 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 flex items-center gap-1 px-2 py-1">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-white/90 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 flex items-center gap-1 px-2 py-1">
           <button
             onClick={() => setCurrentLayout2DIndex(Math.max(0, currentLayout2DIndex - 1))}
             disabled={currentLayout2DIndex === 0}
@@ -1438,97 +1438,98 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
       )}
 
       {layout2d && backplateUrl && !isDziAsset(layout2d.BackplateUrl) && (
-        <TransformWrapper
-          initialScale={1}
-          minScale={1}
-          maxScale={10}
-          limitToBounds={false}
-          centerOnInit={true}
-          wheel={{ step: 0.1 }}
-          doubleClick={{ disabled: false }}
-          panning={{ disabled: false, velocityDisabled: true }}
-          onPanningStop={(ref) => {
-            const { positionX, positionY, scale } = ref.state;
-            const wrapperW = window.innerWidth;
-            const wrapperH = window.innerHeight;
-            const contentW = wrapperW * scale;
-            const contentH = (wrapperW * (layout2d.BackplateHeight || 1080) / (layout2d.BackplateWidth || 1920)) * scale;
-            const minX = Math.min(0, wrapperW - contentW);
-            const minY = Math.min(0, wrapperH - contentH);
-            const clampedX = Math.max(minX, Math.min(0, positionX));
-            const clampedY = Math.max(minY, Math.min(0, positionY));
-            if (clampedX !== positionX || clampedY !== positionY) {
-              ref.setTransform(clampedX, clampedY, scale, 200);
-            }
-          }}
-        >
-          {(utils) => (
-            <>
-              <div className="fixed bottom-20 left-6 z-20 flex flex-col gap-2">
-                <button
-                  onClick={() => utils.zoomIn()}
-                  className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
-                  title="Zoom In"
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => utils.zoomOut()}
-                  className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
-                  title="Zoom Out"
-                >
-                  −
-                </button>
-                <button
-                  onClick={() => utils.resetTransform()}
-                  className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium transition-colors"
-                  title="Reset View"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <TransformComponent
-                wrapperStyle={{ width: '100vw', height: '100vh' }}
-              >
-                <div
-                  ref={containerRef}
-                  className="relative"
-                  style={{
-                    width: '100vw',
-                    aspectRatio: `${layout2d.BackplateWidth || 1920} / ${layout2d.BackplateHeight || 1080}`,
-                  }}
-                >
-                  <img
-                    src={backplateUrl}
-                    alt={layout2d.DisplayName || 'Layout'}
-                    className="w-full h-full"
-                    style={{ display: 'block' }}
-                  />
-                  {layout2d.Markers && layout2d.Markers.length > 0 && (
-                    <MarkerOverlay
-                      layout2d={layout2d}
-                      onSelectMarker={setSelectedMarker}
-                      isEditMode={isEditMode}
-                      positionOverrides={positionOverrides}
-                      onMarkerDrag={handleMarkerDrag}
-                      onReplicate={handleReplicateMarker}
-                      onEditMarker={setEditingMarker}
-                      onDeleteMarker={setDeletingMarker}
-                      tempMarkerIds={tempMarkerIds}
-                      markerEdits={markerEdits}
-                    />
-                  )}
+        <div className="absolute inset-0">
+          <TransformWrapper
+            initialScale={1}
+            minScale={1}
+            maxScale={10}
+            limitToBounds={false}
+            centerOnInit={true}
+            wheel={{ step: 0.1 }}
+            doubleClick={{ disabled: false }}
+            panning={{ disabled: false, velocityDisabled: true }}
+            onPanningStop={(ref) => {
+              const { positionX, positionY, scale } = ref.state;
+              const wrapperW = containerRef.current?.clientWidth || window.innerWidth;
+              const wrapperH = containerRef.current?.clientHeight || window.innerHeight;
+              const contentW = wrapperW * scale;
+              const contentH = (wrapperW * (layout2d.BackplateHeight || 1080) / (layout2d.BackplateWidth || 1920)) * scale;
+              const minX = Math.min(0, wrapperW - contentW);
+              const minY = Math.min(0, wrapperH - contentH);
+              const clampedX = Math.max(minX, Math.min(0, positionX));
+              const clampedY = Math.max(minY, Math.min(0, positionY));
+              if (clampedX !== positionX || clampedY !== positionY) {
+                ref.setTransform(clampedX, clampedY, scale, 200);
+              }
+            }}
+          >
+            {(utils) => (
+              <div className="relative h-full w-full">
+                <div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2">
+                  <button
+                    onClick={() => utils.zoomIn()}
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
+                    title="Zoom In"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => utils.zoomOut()}
+                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"
+                    title="Zoom Out"
+                  >
+                    −
+                  </button>
+                  <button
+                    onClick={() => utils.resetTransform()}
+                    className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium transition-colors"
+                    title="Reset View"
+                  >
+                    Reset
+                  </button>
                 </div>
-              </TransformComponent>
-            </>
-          )}
-        </TransformWrapper>
+
+                <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+                  <div
+                    ref={containerRef}
+                    className="relative"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      aspectRatio: `${layout2d.BackplateWidth || 1920} / ${layout2d.BackplateHeight || 1080}`,
+                    }}
+                  >
+                    <img
+                      src={backplateUrl}
+                      alt={layout2d.DisplayName || 'Layout'}
+                      className="w-full h-full"
+                      style={{ display: 'block' }}
+                    />
+                    {layout2d.Markers && layout2d.Markers.length > 0 && (
+                      <MarkerOverlay
+                        layout2d={layout2d}
+                        onSelectMarker={setSelectedMarker}
+                        isEditMode={isEditMode}
+                        positionOverrides={positionOverrides}
+                        onMarkerDrag={handleMarkerDrag}
+                        onReplicate={handleReplicateMarker}
+                        onEditMarker={setEditingMarker}
+                        onDeleteMarker={setDeletingMarker}
+                        tempMarkerIds={tempMarkerIds}
+                        markerEdits={markerEdits}
+                      />
+                    )}
+                  </div>
+                </TransformComponent>
+              </div>
+            )}
+          </TransformWrapper>
+        </div>
       )}
 
       {/* Floating Markers Widget */}
       {layout2d && layout2d.Markers && layout2d.Markers.length > 0 && (
-        <div className="fixed bottom-6 right-6 bg-white rounded-lg shadow-xl border border-gray-200 z-30">
+        <div className="absolute bottom-6 right-6 bg-white rounded-lg shadow-xl border border-gray-200 z-30">
           <button
             onClick={() => setShowMarkersList(!showMarkersList)}
             className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors rounded-t-lg"
