@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2, Database, GripVertical, Minimize2, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Save, X, Copy, Trash2, Database, GripVertical, Minimize2, Maximize2, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { TransformWrapper, TransformComponent, useTransformEffect } from 'react-zoom-pan-pinch';
-import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName } from '@/lib/cdnUtils';
+import { constructCdnUrl, getMarkerTypeName, getMarkerSubTypeName, ViewTypes } from '@/lib/cdnUtils';
 import { v4 as uuidv4 } from 'uuid';
 import { Layout2DDziViewer } from '@/components/Layout2DDziViewer';
+import SVG from 'react-inlinesvg';
 
 function isDziAsset(path?: string | null): boolean {
   if (!path) return false;
@@ -20,6 +21,34 @@ interface Layout2D {
   BackplateWidth: number;
   BackplateHeight: number;
   Markers: Marker[];
+}
+
+// Mirrors WebApp's src/utils/Url/splitPath.ts
+function splitPath(filePath: string) {
+  const regex = /^(.*\/)?([^\/\.]+)(?:\.([^\/\?]+))?(?:\?(.*))?$/;
+  const match = filePath.match(regex);
+  if (!match) return null;
+  return {
+    folderPath: match[1] || '',
+    fileName: match[2],
+    queryString: match[4] || '',
+  };
+}
+
+// Mirrors WebApp's ParkingFilterableSvg/utils/generateSvgOverlayPath.ts:
+// parking floorplans don't have DB-backed Overlay rows — the slots/road SVGs
+// live alongside the backplate under a sibling "svgs/" folder by convention.
+function generateParkingSvgOverlayPaths(backplateUrl?: string) {
+  if (!backplateUrl) return { slotsOverlayPath: undefined, roadOverlayPath: undefined };
+  const split = splitPath(backplateUrl);
+  if (!split) return { slotsOverlayPath: undefined, roadOverlayPath: undefined };
+  const { folderPath, fileName, queryString } = split;
+  const buildOverlayPath = (suffix: string) =>
+    `${folderPath}svgs/${fileName}${suffix}.svg${queryString ? `?${queryString}` : ''}`;
+  return {
+    slotsOverlayPath: buildOverlayPath(''),
+    roadOverlayPath: buildOverlayPath('_road'),
+  };
 }
 
 interface Marker {
@@ -166,6 +195,7 @@ function MarkerIcon({
 
 interface ViewConfig {
   Id: string;
+  Kind: number;
   Title: string;
   Subtitle: string;
   Code: string;
@@ -929,6 +959,13 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [sqlCopiedType, setSqlCopiedType] = useState<'insert' | 'delete' | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [headerPos, setHeaderPos] = useState({ x: 16, y: 16 });
+  const [showSvgOverlay, setShowSvgOverlay] = useState(false);
+  const [hoveredPathId, setHoveredPathId] = useState<string | null>(null);
+  const [hoveredPathPos, setHoveredPathPos] = useState<{ x: number; y: number } | null>(null);
+  const [editingPathId, setEditingPathId] = useState<string | null>(null);
+  const [editingPathNewId, setEditingPathNewId] = useState('');
+  const [svgPathIdEdits, setSvgPathIdEdits] = useState<Record<string, string>>({});
+  const svgOverlayRef = useRef<HTMLDivElement>(null);
   const headerDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   const handleHeaderDragStart = (e: React.PointerEvent) => {
@@ -943,6 +980,58 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
     setHeaderPos({ x: headerDragRef.current.originX + dx, y: headerDragRef.current.originY + dy });
   };
   const handleHeaderDragEnd = () => { headerDragRef.current = null; };
+
+  const svgPathIdEditsRef = useRef(svgPathIdEdits);
+  svgPathIdEditsRef.current = svgPathIdEdits;
+
+  useEffect(() => {
+    const container = svgOverlayRef.current;
+    if (!container || !showSvgOverlay) return;
+
+    const SHAPE_SELECTOR = 'path, polygon, rect, circle, ellipse';
+
+    const findIdElement = (el: Element): Element | null => {
+      if (el.getAttribute('id')) return el;
+      return el.closest('[id]');
+    };
+
+    const attachListeners = () => {
+      const shapes = container.querySelectorAll(SHAPE_SELECTOR);
+      shapes.forEach((shape) => {
+        const svgEl = shape as SVGElement;
+        if (svgEl.dataset.overlayBound) return;
+        svgEl.dataset.overlayBound = '1';
+
+        svgEl.addEventListener('mouseenter', (e: Event) => {
+          const me = e as MouseEvent;
+          const idEl = findIdElement(svgEl);
+          const pathId = idEl?.getAttribute('id') || '(no id)';
+          setHoveredPathId(pathId);
+          setHoveredPathPos({ x: me.clientX, y: me.clientY });
+        });
+        svgEl.addEventListener('mousemove', (e: Event) => {
+          const me = e as MouseEvent;
+          setHoveredPathPos({ x: me.clientX, y: me.clientY });
+        });
+        svgEl.addEventListener('mouseleave', () => {
+          setHoveredPathId(null);
+          setHoveredPathPos(null);
+        });
+        svgEl.addEventListener('click', (e: Event) => {
+          e.stopPropagation();
+          const idEl = findIdElement(svgEl);
+          const pathId = idEl?.getAttribute('id') || '';
+          setEditingPathId(pathId);
+          setEditingPathNewId(svgPathIdEditsRef.current[pathId] ?? pathId);
+        });
+      });
+    };
+
+    attachListeners();
+    const observer = new MutationObserver(() => attachListeners());
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [showSvgOverlay]);
 
   useEffect(() => {
     const fetchViewConfig = async () => {
@@ -1390,6 +1479,50 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
                   </button>
                 )}
               </div>
+
+              {viewConfig.Kind === ViewTypes.ParkingFloorplan && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setShowSvgOverlay(!showSvgOverlay);
+                      if (showSvgOverlay) {
+                        setEditingPathId(null);
+                        setHoveredPathId(null);
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-0.5 transition-colors ${showSvgOverlay ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                  >
+                    {showSvgOverlay ? <Eye size={10} /> : <EyeOff size={10} />}
+                    SVG Overlay
+                  </button>
+                  {showSvgOverlay && Object.keys(svgPathIdEdits).length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (!svgOverlayRef.current) return;
+                        const svgEl = svgOverlayRef.current.querySelector('svg');
+                        if (!svgEl) return;
+                        const clone = svgEl.cloneNode(true) as SVGElement;
+                        Object.entries(svgPathIdEdits).forEach(([oldId, newId]) => {
+                          const el = clone.querySelector(`[id="${oldId}"]`);
+                          if (el) el.setAttribute('id', newId);
+                        });
+                        clone.removeAttribute('style');
+                        clone.removeAttribute('class');
+                        const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${layout2d?.DisplayName || 'overlay'}_edited.svg`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-0.5 bg-green-600 text-white hover:bg-green-700 transition-colors"
+                    >
+                      <Save size={10} /> Download SVG ({Object.keys(svgPathIdEdits).length})
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1424,6 +1557,7 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
         <Layout2DDziViewer
           dziUrl={backplateUrl}
           layout2d={layout2d}
+          cdnBaseUrl={viewConfig.CdnBaseUrl}
           onSelectMarker={setSelectedMarker}
           isEditMode={isEditMode}
           positionOverrides={positionOverrides}
@@ -1505,6 +1639,100 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
                     className="w-full h-full"
                     style={{ display: 'block' }}
                   />
+                  {viewConfig.Kind === ViewTypes.ParkingFloorplan && showSvgOverlay && (() => {
+                    const { slotsOverlayPath, roadOverlayPath } = generateParkingSvgOverlayPaths(layout2d.BackplateUrl);
+                    const slotsOverlayUrl = constructCdnUrl(slotsOverlayPath, viewConfig.CdnBaseUrl);
+                    const roadOverlayUrl = constructCdnUrl(roadOverlayPath, viewConfig.CdnBaseUrl);
+                    return (
+                      <div
+                        ref={svgOverlayRef}
+                        className="svg-overlay-container absolute inset-0 w-full h-full"
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        <style>{`
+                          .svg-overlay-container svg {
+                            background: transparent !important;
+                            fill: none !important;
+                            pointer-events: none;
+                          }
+                          .svg-overlay-container svg > path:not([id]),
+                          .svg-overlay-container svg > rect:not([id]),
+                          .svg-overlay-container svg > polygon:not([id]),
+                          .svg-overlay-container svg > circle:not([id]),
+                          .svg-overlay-container svg > ellipse:not([id]) {
+                            fill: none !important;
+                            stroke: none !important;
+                            pointer-events: none !important;
+                          }
+                          .svg-overlay-container svg > g path,
+                          .svg-overlay-container svg > g polygon,
+                          .svg-overlay-container svg > g rect,
+                          .svg-overlay-container svg > g circle,
+                          .svg-overlay-container svg > g ellipse,
+                          .svg-overlay-container svg > path[id],
+                          .svg-overlay-container svg > polygon[id],
+                          .svg-overlay-container svg > rect[id],
+                          .svg-overlay-container svg > circle[id],
+                          .svg-overlay-container svg > ellipse[id] {
+                            fill: rgba(255, 255, 255, 0.45) !important;
+                            stroke: rgba(255, 255, 255, 0.7) !important;
+                            stroke-width: 0.5 !important;
+                            transition: fill 0.15s, stroke 0.15s;
+                            cursor: pointer;
+                            pointer-events: all;
+                          }
+                          .svg-overlay-container svg > g path:hover,
+                          .svg-overlay-container svg > g polygon:hover,
+                          .svg-overlay-container svg > g rect:hover,
+                          .svg-overlay-container svg > g circle:hover,
+                          .svg-overlay-container svg > g ellipse:hover,
+                          .svg-overlay-container svg > path[id]:hover,
+                          .svg-overlay-container svg > polygon[id]:hover,
+                          .svg-overlay-container svg > rect[id]:hover,
+                          .svg-overlay-container svg > circle[id]:hover,
+                          .svg-overlay-container svg > ellipse[id]:hover {
+                            fill: rgba(99, 102, 241, 0.4) !important;
+                            stroke: rgba(99, 102, 241, 0.8) !important;
+                          }
+                          .svg-overlay-container defs *,
+                          .svg-overlay-container clipPath *,
+                          .svg-overlay-container mask * {
+                            fill: revert !important;
+                            stroke: revert !important;
+                            stroke-width: revert !important;
+                          }
+                        `}</style>
+                        {slotsOverlayUrl && (
+                          <SVG
+                            src={slotsOverlayUrl}
+                            style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
+                            preProcessor={(code) =>
+                              code.replace(/<svg([^>]*)>/, (match, attrs) => {
+                                const cleaned = attrs
+                                  .replace(/\s*width="[^"]*"/g, '')
+                                  .replace(/\s*height="[^"]*"/g, '');
+                                return `<svg${cleaned} preserveAspectRatio="none">`;
+                              })
+                            }
+                          />
+                        )}
+                        {roadOverlayUrl && (
+                          <SVG
+                            src={roadOverlayUrl}
+                            style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}
+                            preProcessor={(code) =>
+                              code.replace(/<svg([^>]*)>/, (match, attrs) => {
+                                const cleaned = attrs
+                                  .replace(/\s*width="[^"]*"/g, '')
+                                  .replace(/\s*height="[^"]*"/g, '');
+                                return `<svg${cleaned} preserveAspectRatio="none">`;
+                              })
+                            }
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                   {layout2d.Markers && layout2d.Markers.length > 0 && (
                     <MarkerOverlay
                       layout2d={layout2d}
@@ -1782,6 +2010,74 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
               >
                 {isDeletingMarker ? 'Deleting...' : 'Confirm Delete'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SVG Path ID Tooltip */}
+      {showSvgOverlay && hoveredPathId && hoveredPathPos && !editingPathId && (
+        <div
+          className="fixed z-50 bg-gray-900 text-white px-2.5 py-1.5 rounded-lg text-xs font-mono shadow-lg pointer-events-none"
+          style={{ left: hoveredPathPos.x + 12, top: hoveredPathPos.y - 8, transform: 'translateY(-100%)' }}
+        >
+          {hoveredPathId}
+        </div>
+      )}
+
+      {/* SVG Path ID Editor */}
+      {showSvgOverlay && editingPathId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setEditingPathId(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-96 p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-gray-900 mb-3">Edit Path ID</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-medium text-gray-500 block mb-1">Current ID</label>
+                <div className="text-xs font-mono bg-gray-100 px-3 py-2 rounded border border-gray-200 text-gray-700">{editingPathId || '(no id)'}</div>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-gray-500 block mb-1">New ID</label>
+                <input
+                  type="text"
+                  value={editingPathNewId}
+                  onChange={(e) => setEditingPathNewId(e.target.value)}
+                  className="w-full text-xs font-mono px-3 py-2 rounded border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (editingPathId && svgOverlayRef.current) {
+                        const el = svgOverlayRef.current.querySelector(`[id="${editingPathId}"]`);
+                        if (el && editingPathNewId) el.setAttribute('id', editingPathNewId);
+                      }
+                      setSvgPathIdEdits((prev) => ({ ...prev, [editingPathId]: editingPathNewId }));
+                      setEditingPathId(null);
+                    } else if (e.key === 'Escape') {
+                      setEditingPathId(null);
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setEditingPathId(null)}
+                  className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (editingPathId && svgOverlayRef.current) {
+                      const el = svgOverlayRef.current.querySelector(`[id="${editingPathId}"]`);
+                      if (el && editingPathNewId) el.setAttribute('id', editingPathNewId);
+                    }
+                    setSvgPathIdEdits((prev) => ({ ...prev, [editingPathId]: editingPathNewId }));
+                    setEditingPathId(null);
+                  }}
+                  className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>
