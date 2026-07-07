@@ -48,6 +48,7 @@ const navGroups = [
   {
     title: 'Utilities',
     items: [
+      { label: 'SQL Orchestrator', href: '/sql-orchestrator', icon: SquareCode },
       { label: 'SQL Value Editor', href: '/sql-editor', icon: FileCode2 },
       { label: 'UUID Generator', href: '/uuid-generator', icon: Settings2 },
       { label: 'Raw API Response', href: '/api/db-test', icon: Server },
@@ -79,6 +80,12 @@ const primaryActions = [
     description: 'Inspect view configs, markers, layouts, and related records.',
     href: '/viewconfig-search',
     icon: Layers,
+  },
+  {
+    title: 'SQL Orchestrator',
+    description: 'Run SQL files and review execution reports against the active database.',
+    href: '/sql-orchestrator',
+    icon: SquareCode,
   },
 ];
 

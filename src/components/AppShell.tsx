@@ -29,6 +29,7 @@ const navGroups = [
       { label: 'Projects', href: '/projects', icon: Database },
       { label: 'Project Search', href: '/project-search', icon: FolderSearch },
       { label: 'Unit Search', href: '/unit-search', icon: Search },
+      { label: 'Unit SQL Generator', href: '/unit-sql-generator', icon: FileCode2 },
     ],
   },
   {
@@ -42,6 +43,7 @@ const navGroups = [
   {
     title: 'Utilities',
     items: [
+      { label: 'SQL Orchestrator', href: '/sql-orchestrator', icon: SquareCode },
       { label: 'SQL Value Editor', href: '/sql-editor', icon: FileCode2 },
       { label: 'UUID Generator', href: '/uuid-generator', icon: Settings2 },
       { label: 'Raw API Response', href: '/api/db-test', icon: Server },

@@ -564,260 +564,21 @@ export function ProjectSearchComponent() {
           )}
 
           {projectUnits.length > 0 && (
-            <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
-              <div className="p-4 bg-slate-50 border-b border-slate-200">
-                <div className="flex flex-col xl:flex-row xl:items-end gap-4">
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-slate-900">Unit SQL Generator</h4>
-                    <p className="text-sm text-slate-600">
-                      {selectedUnitRecords.length} of {projectUnits.length} units selected
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 flex-[3]">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">SQL Type</label>
-                      <select
-                        value={sqlOperation}
-                        onChange={(e) => setSqlOperation(e.target.value as SqlOperation)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-sm text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="update">Update</option>
-                        <option value="delete">Delete</option>
-                        <option value="select">Select</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">UnitStatus</label>
-                      <select
-                        value={unitStatus}
-                        onChange={(e) => handleUnitStatusChange(e.target.value)}
-                        disabled={sqlOperation !== 'update'}
-                        className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-sm text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-100 disabled:text-slate-700 disabled:opacity-100"
-                      >
-                        {UNIT_STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <label className="flex items-center gap-2 text-sm text-slate-700 pt-6">
-                      <input
-                        type="checkbox"
-                        checked={targetIsVisible}
-                        onChange={(e) => setTargetIsVisible(e.target.checked)}
-                        disabled={sqlOperation !== 'update'}
-                        className="w-4 h-4"
-                      />
-                      IsVisible
-                    </label>
-
-                    <label className="flex items-center gap-2 text-sm text-slate-700 pt-6">
-                      <input
-                        type="checkbox"
-                        checked={targetIsExplorable}
-                        onChange={(e) => setTargetIsExplorable(e.target.checked)}
-                        disabled={sqlOperation !== 'update'}
-                        className="w-4 h-4"
-                      />
-                      IsExplorable
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={generateUnitSql}
-                      disabled={selectedUnitRecords.length === 0}
-                      className="mt-5 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:bg-slate-300 transition-colors"
-                    >
-                      Generate SQL
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 bg-white border-b border-slate-200">
-                <div className="flex flex-col lg:flex-row lg:items-end gap-3 mb-3">
-                  <div className="flex-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Search Units</label>
-                    <div className="relative">
-                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        value={unitSearchInput}
-                        onChange={(e) => setUnitSearchInput(e.target.value)}
-                        placeholder="Unit number, status, property, floor..."
-                        className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="w-full lg:w-40">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Units Per Page</label>
-                    <select
-                      value={unitRowsPerPage}
-                      onChange={(e) => setUnitRowsPerPage(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-sm text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value={10}>10</option>
-                      <option value={25}>25</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                      <option value={250}>250</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSelectUnits(paginatedProjectUnits, paginatedProjectUnits.some((unit) => !selectedUnits.has(unit.Id)))}
-                      disabled={paginatedProjectUnits.length === 0}
-                      className="px-3 py-2 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 transition-colors"
-                    >
-                      {paginatedProjectUnits.length > 0 && paginatedProjectUnits.every((unit) => selectedUnits.has(unit.Id)) ? 'Clear Page' : 'Select Page'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectUnits(filteredProjectUnits, filteredProjectUnits.some((unit) => !selectedUnits.has(unit.Id)))}
-                      disabled={filteredProjectUnits.length === 0}
-                      className="px-3 py-2 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 transition-colors"
-                    >
-                      {filteredProjectUnits.length > 0 && filteredProjectUnits.every((unit) => selectedUnits.has(unit.Id)) ? 'Clear Filtered' : 'Select Filtered'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                  <p className="text-xs text-slate-600">
-                    Showing {filteredProjectUnits.length === 0 ? 0 : ((unitPage - 1) * unitRowsPerPage) + 1}
-                    -{Math.min(unitPage * unitRowsPerPage, filteredProjectUnits.length)} of {filteredProjectUnits.length} units
+            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h4 className="font-semibold text-blue-950">Unit SQL Generator moved</h4>
+                  <p className="mt-1 text-sm text-blue-900">
+                    Use the dedicated Unit SQL Generator page for project-based selection, direct unit aliases, and Aldar property URL lookup.
                   </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setUnitPage((page) => Math.max(1, page - 1))}
-                      disabled={unitPage === 1}
-                      className="px-3 py-1 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 transition-colors"
-                    >
-                      Previous
-                    </button>
-                    <span className="text-xs font-medium text-slate-600">
-                      Page {unitPage} of {unitTotalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setUnitPage((page) => Math.min(unitTotalPages, page + 1))}
-                      disabled={unitPage === unitTotalPages}
-                      className="px-3 py-1 text-xs bg-slate-100 text-slate-700 rounded hover:bg-slate-200 disabled:bg-slate-50 disabled:text-slate-400 transition-colors"
-                    >
-                      Next
-                    </button>
-                  </div>
                 </div>
-
-                <div className="overflow-auto border border-slate-200 rounded">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="w-10 px-3 py-2 text-left"></th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">UnitNumber</th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">Visible</th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">Explorable</th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">Project</th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-700">Location</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {paginatedProjectUnits.map((unit) => (
-                        <tr key={unit.Id} className={selectedUnits.has(unit.Id) ? 'bg-blue-50' : ''}>
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedUnits.has(unit.Id)}
-                              onChange={(e) => handleSelectUnit(unit.Id, e.target.checked)}
-                              className="w-4 h-4"
-                            />
-                          </td>
-                          <td className="px-3 py-2 font-mono text-xs text-slate-700">
-                            <CellWithCopy text={unit.UnitNumber || '-'} cellId={`unit-picker-number-${unit.Id}`} />
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">{unit.UnitStatus || '-'}</td>
-                          <td className="px-3 py-2 text-slate-700">{unit.IsVisible ? 'Yes' : 'No'}</td>
-                          <td className="px-3 py-2 text-slate-700">{unit.IsExplorable ? 'Yes' : 'No'}</td>
-                          <td className="px-3 py-2 text-slate-700">{unit.projectTitle}</td>
-                          <td className="px-3 py-2 text-xs text-slate-600">
-                            {[unit.clusterTitle, unit.propertyTitle, unit.floorTitle].filter(Boolean).join(' / ')}
-                          </td>
-                        </tr>
-                      ))}
-
-                      {paginatedProjectUnits.length === 0 && (
-                        <tr>
-                          <td colSpan={7} className="px-3 py-6 text-center text-sm text-slate-500">
-                            No units match the current search.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <a
+                  href={`/unit-sql-generator?mode=project${codeInput ? `&projectCode=${encodeURIComponent(codeInput)}` : ''}${uuidInput ? `&projectUuid=${encodeURIComponent(uuidInput)}` : ''}${codeMatchType ? `&matchType=${codeMatchType}` : ''}`}
+                  className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                >
+                  Open Unit SQL Generator
+                </a>
               </div>
-
-              {(currentSql || previousSqls.length > 0) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 bg-white">
-                  {currentSql && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h5 className="font-semibold text-slate-900">Current SQL</h5>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(currentSql, 'current-unit-sql')}
-                            className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors flex items-center gap-1"
-                          >
-                            {copiedCell === 'current-unit-sql' ? <Check size={12} /> : <Copy size={12} />}
-                            Copy
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => downloadSqlFile(currentSql, `unit_${sqlOperation}`)}
-                            className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-1"
-                          >
-                            <Download size={12} />
-                            Download
-                          </button>
-                        </div>
-                      </div>
-                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950 p-3 text-xs text-slate-100">{currentSql}</pre>
-                    </div>
-                  )}
-
-                  {previousSqls.length > 0 && (
-                    <div>
-                      <h5 className="font-semibold text-slate-900 mb-2">Previous SQL</h5>
-                      <div className="space-y-3 max-h-72 overflow-auto">
-                        {previousSqls.map((sql, index) => (
-                          <div key={`${index}-${sql.length}`} className="rounded border border-slate-200">
-                            <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
-                              <span className="text-xs font-medium text-slate-600">Previous #{index + 1}</span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(sql, `previous-unit-sql-${index}`)}
-                                className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors flex items-center gap-1"
-                              >
-                                {copiedCell === `previous-unit-sql-${index}` ? <Check size={12} /> : <Copy size={12} />}
-                                Copy
-                              </button>
-                            </div>
-                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words bg-slate-950 p-3 text-xs text-slate-100">{sql}</pre>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
@@ -903,21 +664,17 @@ export function ProjectSearchComponent() {
                       <div className="border-t pt-4">
                         <div className="flex items-center justify-between gap-4 mb-3">
                           <h5 className="font-semibold text-gray-900">Units</h5>
-                          <label className="flex items-center gap-2 text-sm text-gray-600">
-                            <input
-                              type="checkbox"
-                              checked={flattenProjectUnits(result).every((unit) => selectedUnits.has(unit.Id))}
-                              onChange={(e) => handleSelectProjectUnits(result, e.target.checked)}
-                              className="w-4 h-4"
-                            />
-                            Select project units
-                          </label>
+                          <a
+                            href={`/unit-sql-generator?mode=project&projectCode=${encodeURIComponent(result.Code)}`}
+                            className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                          >
+                            Open in Unit SQL Generator
+                          </a>
                         </div>
                         <div className="overflow-auto border border-slate-200 rounded">
                           <table className="min-w-full divide-y divide-slate-200 text-sm">
                             <thead className="bg-slate-50">
                               <tr>
-                                <th className="w-10 px-3 py-2 text-left"></th>
                                 <th className="px-3 py-2 text-left font-semibold text-slate-700">UnitNumber</th>
                                 <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
                                 <th className="px-3 py-2 text-left font-semibold text-slate-700">Visible</th>
@@ -927,15 +684,7 @@ export function ProjectSearchComponent() {
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                               {flattenProjectUnits(result).map((unit) => (
-                                <tr key={unit.Id} className={selectedUnits.has(unit.Id) ? 'bg-blue-50' : ''}>
-                                  <td className="px-3 py-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedUnits.has(unit.Id)}
-                                      onChange={(e) => handleSelectUnit(unit.Id, e.target.checked)}
-                                      className="w-4 h-4"
-                                    />
-                                  </td>
+                                <tr key={unit.Id}>
                                   <td className="px-3 py-2 font-mono text-xs text-slate-700">
                                     <CellWithCopy text={unit.UnitNumber || '-'} cellId={`unit-number-${unit.Id}`} />
                                   </td>
