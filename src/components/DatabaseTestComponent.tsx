@@ -102,10 +102,10 @@ export function DatabaseTestComponent() {
       {/* Database Details */}
       <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg">
         <h3 className="font-bold text-slate-900 mb-4">Database Configuration</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
           <div>
             <p className="text-sm text-slate-600">Host</p>
-            <p className="font-mono text-slate-900">{data.databaseInfo?.host}</p>
+            <p className="break-words font-mono text-slate-900">{data.databaseInfo?.host}</p>
           </div>
           <div>
             <p className="text-sm text-slate-600">Port</p>
@@ -113,15 +113,15 @@ export function DatabaseTestComponent() {
           </div>
           <div>
             <p className="text-sm text-slate-600">Database</p>
-            <p className="font-mono text-slate-900">{data.databaseInfo?.database}</p>
+            <p className="break-words font-mono text-slate-900">{data.databaseInfo?.database}</p>
           </div>
           <div>
             <p className="text-sm text-slate-600">User</p>
-            <p className="font-mono text-slate-900">{data.databaseInfo?.user}</p>
+            <p className="break-words font-mono text-slate-900">{data.databaseInfo?.user}</p>
           </div>
           <div>
             <p className="text-sm text-slate-600">Schema</p>
-            <p className="font-mono text-slate-900">{data.databaseInfo?.schema}</p>
+            <p className="break-words font-mono text-slate-900">{data.databaseInfo?.schema}</p>
           </div>
           <div>
             <p className="text-sm text-slate-600">Last Updated</p>
@@ -134,11 +134,18 @@ export function DatabaseTestComponent() {
       {data.tableCounts && (
         <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg">
           <h3 className="font-bold text-slate-900 mb-4">Database Tables Record Count</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {Object.entries(data.tableCounts).map(([table, count]) => (
-              <div key={table} className="bg-white p-3 rounded border border-slate-200">
-                <p className="text-sm text-slate-600">{table}</p>
-                <p className="text-2xl font-bold text-slate-900">{count}</p>
+              <div
+                key={table}
+                className="flex min-h-[7rem] flex-col justify-between rounded border border-slate-200 bg-white p-4"
+              >
+                <p className="text-base font-medium leading-6 text-slate-600 break-words">
+                  {table}
+                </p>
+                <p className="mt-3 text-4xl font-bold leading-none tracking-tight text-slate-900">
+                  {count}
+                </p>
               </div>
             ))}
           </div>

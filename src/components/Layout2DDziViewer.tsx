@@ -368,7 +368,7 @@ export function Layout2DDziViewer({
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-gray-900">
+    <div className="relative h-full w-full overflow-hidden bg-gray-900">
       <div id={viewerId} ref={containerRef} className="w-full h-full" />
 
       <div
@@ -518,7 +518,7 @@ export function Layout2DDziViewer({
         })}
       </div>
 
-      <div className="fixed bottom-20 left-6 z-20 flex flex-col gap-2">
+      <div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2">
         <button
           onClick={handleZoomIn}
           className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium transition-colors"

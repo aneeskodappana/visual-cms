@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronRight, Search, Copy, Check, Download } from 'lucide-react';
 import { generateProjectInsertSql, downloadSqlFile } from '@/lib/sqlExportUtils';
@@ -23,6 +23,72 @@ interface ProjectResult {
   City: any;
 }
 
+type SqlOperation = 'update' | 'delete' | 'select';
+
+interface FlatProjectUnit {
+  Id: string;
+  Code: string;
+  DisplayName?: string;
+  UnitNumber: string;
+  UnitStatus: string;
+  IsVisible: boolean;
+  IsExplorable: boolean;
+  projectTitle: string;
+  clusterTitle: string;
+  propertyTitle: string;
+  floorTitle: string;
+}
+
+const UNIT_STATUS_OPTIONS = ['Available', 'Reserved', 'Sold', 'Unavailable'] as const;
+
+const escapeSqlString = (value: string) => value.replace(/'/g, "''");
+
+const sqlLiteral = (value: string) => `'${escapeSqlString(value)}'`;
+
+const buildUnitWhereClause = (units: FlatProjectUnit[]) => {
+  const unitsWithNumbers = units.filter((unit) => Boolean(unit.UnitNumber));
+  const unitNumbers = Array.from(new Set(unitsWithNumbers.map((unit) => unit.UnitNumber))).sort();
+  if (unitsWithNumbers.length !== units.length) {
+    const ids = Array.from(new Set(units.map((unit) => unit.Id))).sort();
+    if (ids.length === 1) {
+      return `"Id"=${sqlLiteral(ids[0])}::uuid`;
+    }
+    return `"Id" IN (${ids.map((id) => `${sqlLiteral(id)}::uuid`).join(', ')})`;
+  }
+  if (unitNumbers.length === 1) {
+    return `"UnitNumber"=${sqlLiteral(unitNumbers[0])}`;
+  }
+  return `"UnitNumber" IN (${unitNumbers.map(sqlLiteral).join(', ')})`;
+};
+
+const flattenProjectUnits = (project: ProjectResult): FlatProjectUnit[] => {
+  const units: FlatProjectUnit[] = [];
+
+  for (const cluster of project.Clusters || []) {
+    for (const property of cluster.Properties || []) {
+      for (const floor of property.PropertyFloors || []) {
+        for (const unit of floor.Units || []) {
+          units.push({
+            Id: unit.Id,
+            Code: unit.Code,
+            DisplayName: unit.DisplayName,
+            UnitNumber: unit.UnitNumber,
+            UnitStatus: unit.UnitStatus,
+            IsVisible: unit.IsVisible,
+            IsExplorable: unit.IsExplorable,
+            projectTitle: project.Title || project.Code,
+            clusterTitle: cluster.Title || cluster.Code || '-',
+            propertyTitle: property.Title || property.Code || '-',
+            floorTitle: floor.Title || floor.Code || '-',
+          });
+        }
+      }
+    }
+  }
+
+  return units;
+};
+
 export function ProjectSearchComponent() {
   const searchParams = useSearchParams();
 
@@ -32,11 +98,28 @@ export function ProjectSearchComponent() {
   const [rowsPerPage, setRowsPerPage] = useState<number>(1000);
   const [results, setResults] = useState<ProjectResult[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
+  const [selectedUnits, setSelectedUnits] = useState<Set<string>>(new Set());
+  const [sqlOperation, setSqlOperation] = useState<SqlOperation>('update');
+  const [unitStatus, setUnitStatus] = useState('Available');
+  const [targetIsVisible, setTargetIsVisible] = useState(true);
+  const [targetIsExplorable, setTargetIsExplorable] = useState(true);
+  const [unitSearchInput, setUnitSearchInput] = useState('');
+  const [unitRowsPerPage, setUnitRowsPerPage] = useState(25);
+  const [unitPage, setUnitPage] = useState(1);
+  const [currentSql, setCurrentSql] = useState('');
+  const [previousSqls, setPreviousSqls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
+  const selectedUnitsRef = useRef<Set<string>>(new Set());
+
+  const updateSelectedUnits = (getNext: (current: Set<string>) => Set<string>) => {
+    const next = getNext(selectedUnitsRef.current);
+    selectedUnitsRef.current = next;
+    setSelectedUnits(next);
+  };
 
   useEffect(() => {
     const code = searchParams.get('code') || '';
@@ -88,6 +171,7 @@ export function ProjectSearchComponent() {
       }
 
       setResults(data.data || []);
+      updateSelectedUnits(() => new Set());
       if (data.data?.length === 0) {
         setError('No results found');
       }
@@ -121,6 +205,128 @@ export function ProjectSearchComponent() {
     } else {
       setSelectedProjects(new Set());
     }
+  };
+
+  const projectUnits = useMemo(() => results.flatMap(flattenProjectUnits), [results]);
+
+  const filteredProjectUnits = useMemo(() => {
+    const query = unitSearchInput.trim().toLowerCase();
+    if (!query) return projectUnits;
+
+    return projectUnits.filter((unit) => {
+      const searchableText = [
+        unit.UnitNumber,
+        unit.Code,
+        unit.DisplayName,
+        unit.UnitStatus,
+        unit.projectTitle,
+        unit.clusterTitle,
+        unit.propertyTitle,
+        unit.floorTitle,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [projectUnits, unitSearchInput]);
+
+  const unitTotalPages = Math.max(1, Math.ceil(filteredProjectUnits.length / unitRowsPerPage));
+  const paginatedProjectUnits = useMemo(() => {
+    const start = (unitPage - 1) * unitRowsPerPage;
+    return filteredProjectUnits.slice(start, start + unitRowsPerPage);
+  }, [filteredProjectUnits, unitPage, unitRowsPerPage]);
+
+  useEffect(() => {
+    setUnitPage(1);
+  }, [unitSearchInput, unitRowsPerPage, projectUnits.length]);
+
+  useEffect(() => {
+    if (unitPage > unitTotalPages) {
+      setUnitPage(unitTotalPages);
+    }
+  }, [unitPage, unitTotalPages]);
+
+  const selectedUnitRecords = useMemo(
+    () => projectUnits.filter((unit) => selectedUnits.has(unit.Id)),
+    [projectUnits, selectedUnits]
+  );
+
+  const handleSelectUnit = (unitId: string, checked: boolean) => {
+    updateSelectedUnits((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(unitId);
+      else next.delete(unitId);
+      return next;
+    });
+  };
+
+  const handleSelectProjectUnits = (project: ProjectResult, checked: boolean) => {
+    const units = flattenProjectUnits(project);
+    updateSelectedUnits((prev) => {
+      const next = new Set(prev);
+      for (const unit of units) {
+        if (checked) next.add(unit.Id);
+        else next.delete(unit.Id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectUnits = (units: FlatProjectUnit[], checked: boolean) => {
+    updateSelectedUnits((prev) => {
+      const next = new Set(prev);
+      for (const unit of units) {
+        if (checked) next.add(unit.Id);
+        else next.delete(unit.Id);
+      }
+      return next;
+    });
+  };
+
+  const handleUnitStatusChange = (status: string) => {
+    setUnitStatus(status);
+    if (status === 'Available') {
+      setTargetIsVisible(true);
+      setTargetIsExplorable(true);
+    }
+    if (status === 'Reserved') {
+      setTargetIsVisible(false);
+      setTargetIsExplorable(false);
+    }
+  };
+
+  const generateUnitSql = () => {
+    const latestSelectedUnits = selectedUnitsRef.current;
+    const latestSelectedUnitRecords = projectUnits.filter((unit) => latestSelectedUnits.has(unit.Id));
+
+    if (latestSelectedUnitRecords.length === 0) {
+      setError('Select at least one unit before generating SQL');
+      return;
+    }
+
+    const whereClause = buildUnitWhereClause(latestSelectedUnitRecords);
+    const unitNumbers = latestSelectedUnitRecords.map((unit) => unit.UnitNumber).sort().join(', ');
+    const header = [
+      `-- ${sqlOperation.toUpperCase()} SQL for ${latestSelectedUnitRecords.length} Unit(s): ${unitNumbers}`,
+      `-- Generated at: ${new Date().toISOString()}`,
+    ].join('\n');
+
+    let sql = '';
+    if (sqlOperation === 'update') {
+      sql = `${header}\nUPDATE public."Units"\nSET "IsVisible"=${targetIsVisible}, "IsExplorable"=${targetIsExplorable}, "UnitStatus"=${sqlLiteral(unitStatus)}\nWHERE ${whereClause};`;
+    } else if (sqlOperation === 'delete') {
+      sql = `${header}\nDELETE FROM public."Units"\nWHERE ${whereClause};`;
+    } else {
+      sql = `${header}\nSELECT *\nFROM public."Units"\nWHERE ${whereClause}\nORDER BY "UnitNumber";`;
+    }
+
+    if (currentSql) {
+      setPreviousSqls((prev) => [currentSql, ...prev].slice(0, 5));
+    }
+    setCurrentSql(sql);
+    setError(null);
   };
 
   const CopyButton = ({ text, cellId }: { text: string; cellId: string }) => (
@@ -357,6 +563,25 @@ export function ProjectSearchComponent() {
             </div>
           )}
 
+          {projectUnits.length > 0 && (
+            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h4 className="font-semibold text-blue-950">Unit SQL Generator moved</h4>
+                  <p className="mt-1 text-sm text-blue-900">
+                    Use the dedicated Unit SQL Generator page for project-based selection, direct unit aliases, and Aldar property URL lookup.
+                  </p>
+                </div>
+                <a
+                  href={`/unit-sql-generator?mode=project${codeInput ? `&projectCode=${encodeURIComponent(codeInput)}` : ''}${uuidInput ? `&projectUuid=${encodeURIComponent(uuidInput)}` : ''}${codeMatchType ? `&matchType=${codeMatchType}` : ''}`}
+                  className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                >
+                  Open Unit SQL Generator
+                </a>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             {results.map((result) => (
               <div key={result.Id} className="border border-gray-300 rounded-lg overflow-hidden">
@@ -434,6 +659,48 @@ export function ProjectSearchComponent() {
                         <p className="text-gray-600">{result.IsExplorable ? 'Yes' : 'No'}</p>
                       </div>
                     </div>
+
+                    {flattenProjectUnits(result).length > 0 && (
+                      <div className="border-t pt-4">
+                        <div className="flex items-center justify-between gap-4 mb-3">
+                          <h5 className="font-semibold text-gray-900">Units</h5>
+                          <a
+                            href={`/unit-sql-generator?mode=project&projectCode=${encodeURIComponent(result.Code)}`}
+                            className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                          >
+                            Open in Unit SQL Generator
+                          </a>
+                        </div>
+                        <div className="overflow-auto border border-slate-200 rounded">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">UnitNumber</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">Status</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">Visible</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">Explorable</th>
+                                <th className="px-3 py-2 text-left font-semibold text-slate-700">Location</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {flattenProjectUnits(result).map((unit) => (
+                                <tr key={unit.Id}>
+                                  <td className="px-3 py-2 font-mono text-xs text-slate-700">
+                                    <CellWithCopy text={unit.UnitNumber || '-'} cellId={`unit-number-${unit.Id}`} />
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-700">{unit.UnitStatus || '-'}</td>
+                                  <td className="px-3 py-2 text-slate-700">{unit.IsVisible ? 'Yes' : 'No'}</td>
+                                  <td className="px-3 py-2 text-slate-700">{unit.IsExplorable ? 'Yes' : 'No'}</td>
+                                  <td className="px-3 py-2 text-xs text-slate-600">
+                                    {[unit.clusterTitle, unit.propertyTitle, unit.floorTitle].filter(Boolean).join(' / ')}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="border-t pt-4">
                       <h5 className="font-semibold text-gray-900 mb-3">Relations</h5>
