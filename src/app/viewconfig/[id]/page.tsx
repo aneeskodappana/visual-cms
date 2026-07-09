@@ -963,7 +963,9 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
   const [hoveredPathId, setHoveredPathId] = useState<string | null>(null);
   const [hoveredPathPos, setHoveredPathPos] = useState<{ x: number; y: number } | null>(null);
   const [editingPathId, setEditingPathId] = useState<string | null>(null);
-  const [editingPathNewId, setEditingPathNewId] = useState('');
+  const [editingPathPrefix, setEditingPathPrefix] = useState('');
+  const [editingPathType, setEditingPathType] = useState('standard');
+  const [editingPathNumber, setEditingPathNumber] = useState('');
   const [svgPathIdEdits, setSvgPathIdEdits] = useState<Record<string, string>>({});
   const svgOverlayRef = useRef<HTMLDivElement>(null);
   const headerDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -1022,7 +1024,17 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
           const idEl = findIdElement(svgEl);
           const pathId = idEl?.getAttribute('id') || '';
           setEditingPathId(pathId);
-          setEditingPathNewId(svgPathIdEditsRef.current[pathId] ?? pathId);
+          const resolvedId = svgPathIdEditsRef.current[pathId] ?? pathId;
+          const typeMatch = resolvedId.match(/^(.+?)_(standard|prime|enclosed|elevator_lobby)_(\d+)$/);
+          if (typeMatch) {
+            setEditingPathPrefix(typeMatch[1]);
+            setEditingPathType(typeMatch[2]);
+            setEditingPathNumber(typeMatch[3]);
+          } else {
+            setEditingPathPrefix(resolvedId);
+            setEditingPathType('standard');
+            setEditingPathNumber('');
+          }
         });
       });
     };
@@ -1508,11 +1520,19 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
                         });
                         clone.removeAttribute('style');
                         clone.removeAttribute('class');
-                        const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' });
+                        clone.removeAttribute('preserveAspectRatio');
+                        clone.querySelectorAll('[data-overlay-bound]').forEach((el) => el.removeAttribute('data-overlay-bound'));
+                        clone.querySelectorAll('[style]').forEach((el) => el.removeAttribute('style'));
+                        clone.querySelectorAll('[class]').forEach((el) => el.removeAttribute('class'));
+                        const svgString = new XMLSerializer().serializeToString(clone);
+                        const xmlDecl = '<?xml version="1.0" encoding="UTF-8"?>\n';
+                        const blob = new Blob([xmlDecl + svgString], { type: 'image/svg+xml' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `${layout2d?.DisplayName || 'overlay'}_edited.svg`;
+                        const overlayPaths = generateParkingSvgOverlayPaths(layout2d?.BackplateUrl);
+                        const origName = overlayPaths.slotsOverlayPath ? splitPath(overlayPaths.slotsOverlayPath)?.fileName || 'overlay' : 'overlay';
+                        a.download = `${origName}.svg`;
                         a.click();
                         URL.revokeObjectURL(url);
                       }}
@@ -2026,62 +2046,86 @@ export default function ViewConfigPage({ params }: { params: { id: string } }) {
       )}
 
       {/* SVG Path ID Editor */}
-      {showSvgOverlay && editingPathId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setEditingPathId(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-96 p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Edit Path ID</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="text-[11px] font-medium text-gray-500 block mb-1">Current ID</label>
-                <div className="text-xs font-mono bg-gray-100 px-3 py-2 rounded border border-gray-200 text-gray-700">{editingPathId || '(no id)'}</div>
-              </div>
-              <div>
-                <label className="text-[11px] font-medium text-gray-500 block mb-1">New ID</label>
-                <input
-                  type="text"
-                  value={editingPathNewId}
-                  onChange={(e) => setEditingPathNewId(e.target.value)}
-                  className="w-full text-xs font-mono px-3 py-2 rounded border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (editingPathId && svgOverlayRef.current) {
-                        const el = svgOverlayRef.current.querySelector(`[id="${editingPathId}"]`);
-                        if (el && editingPathNewId) el.setAttribute('id', editingPathNewId);
-                      }
-                      setSvgPathIdEdits((prev) => ({ ...prev, [editingPathId]: editingPathNewId }));
-                      setEditingPathId(null);
-                    } else if (e.key === 'Escape') {
-                      setEditingPathId(null);
-                    }
-                  }}
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  onClick={() => setEditingPathId(null)}
-                  className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (editingPathId && svgOverlayRef.current) {
-                      const el = svgOverlayRef.current.querySelector(`[id="${editingPathId}"]`);
-                      if (el && editingPathNewId) el.setAttribute('id', editingPathNewId);
-                    }
-                    setSvgPathIdEdits((prev) => ({ ...prev, [editingPathId]: editingPathNewId }));
-                    setEditingPathId(null);
-                  }}
-                  className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
-                >
-                  Save
-                </button>
+      {showSvgOverlay && editingPathId !== null && (() => {
+        const composedNewId = editingPathNumber
+          ? `${editingPathPrefix}_${editingPathType}_${editingPathNumber}`
+          : `${editingPathPrefix}_${editingPathType}`;
+        const handleSavePathId = () => {
+          if (editingPathId && svgOverlayRef.current) {
+            const el = svgOverlayRef.current.querySelector(`[id="${editingPathId}"]`);
+            if (el && composedNewId) el.setAttribute('id', composedNewId);
+          }
+          setSvgPathIdEdits((prev) => ({ ...prev, [editingPathId]: composedNewId }));
+          setEditingPathId(null);
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setEditingPathId(null)}>
+            <div className="bg-white rounded-xl shadow-2xl w-[420px] p-5" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-bold text-gray-900 mb-3">Edit Path ID</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 block mb-1">Current ID</label>
+                  <div className="text-xs font-mono bg-gray-100 px-3 py-2 rounded border border-gray-200 text-gray-700">{editingPathId || '(no id)'}</div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 block mb-1">New ID</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={editingPathPrefix}
+                      onChange={(e) => setEditingPathPrefix(e.target.value)}
+                      placeholder="prefix"
+                      className="flex-1 text-xs font-mono px-3 py-2 rounded border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                      autoFocus
+                    />
+                    <span className="text-gray-400 text-xs font-mono">_</span>
+                    <select
+                      value={editingPathType}
+                      onChange={(e) => setEditingPathType(e.target.value)}
+                      className="text-xs font-mono px-2 py-2 rounded border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none bg-white"
+                    >
+                      <option value="standard">standard</option>
+                      <option value="prime">prime</option>
+                      <option value="enclosed">enclosed</option>
+                      <option value="elevator_lobby">elevator_lobby</option>
+                    </select>
+                    <span className="text-gray-400 text-xs font-mono">_</span>
+                    <input
+                      type="text"
+                      value={editingPathNumber}
+                      onChange={(e) => setEditingPathNumber(e.target.value)}
+                      placeholder="#"
+                      className="w-20 text-xs font-mono px-3 py-2 rounded border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSavePathId();
+                        else if (e.key === 'Escape') setEditingPathId(null);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 block mb-1">Preview</label>
+                  <div className="text-xs font-mono bg-indigo-50 px-3 py-2 rounded border border-indigo-200 text-indigo-700">{composedNewId}</div>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => setEditingPathId(null)}
+                    className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSavePathId}
+                    className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
