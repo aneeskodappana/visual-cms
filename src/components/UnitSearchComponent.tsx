@@ -259,7 +259,7 @@ export function UnitSearchComponent() {
               type="text"
               value={unitNumberInput}
               onChange={(e) => setUnitNumberInput(e.target.value)}
-              placeholder="e.g., 'A-101'"
+              placeholder="e.g., 'A-101' or 'twickenhamsquare_rivierahouse_01_02'"
               minLength={3}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
