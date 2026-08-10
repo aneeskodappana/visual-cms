@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Copy, Database, Pencil, Trash2 } from 'lucide-react';
 import type OpenSeadragonType from 'openseadragon';
+import { constructCdnUrl } from '@/lib/cdnUtils';
+import SVG from 'react-inlinesvg';
 
 type Marker = {
   Id: string;
@@ -131,6 +133,13 @@ function MarkerIcon({
   );
 }
 
+type Overlay = {
+  Id: string;
+  Url: string;
+  Type: number;
+  Version: number;
+};
+
 type Layout2D = {
   Id: string;
   DisplayName: string;
@@ -138,11 +147,13 @@ type Layout2D = {
   BackplateWidth: number;
   BackplateHeight: number;
   Markers: Marker[];
+  Overlays?: Overlay[];
 };
 
 type Props = {
   dziUrl: string;
   layout2d: Layout2D;
+  cdnBaseUrl?: string;
   onSelectMarker: (marker: Marker) => void;
   isEditMode: boolean;
   positionOverrides: Record<string, { top: number; left: number }>;
@@ -160,6 +171,7 @@ const DRAG_THRESHOLD = 5;
 export function Layout2DDziViewer({
   dziUrl,
   layout2d,
+  cdnBaseUrl,
   onSelectMarker,
   isEditMode,
   positionOverrides,
