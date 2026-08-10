@@ -12,6 +12,7 @@ import {
   Search,
   Server,
   Settings2,
+  ShieldAlert,
   SquareCode,
 } from 'lucide-react';
 import { DatabaseTestComponent } from '@/components/DatabaseTestComponent';
@@ -48,6 +49,7 @@ const navGroups = [
   {
     title: 'Utilities',
     items: [
+      { label: '404 Diagnostics', href: '/404-diagnostics', icon: ShieldAlert },
       { label: 'SQL Orchestrator', href: '/sql-orchestrator', icon: SquareCode },
       { label: 'SQL Value Editor', href: '/sql-editor', icon: FileCode2 },
       { label: 'UUID Generator', href: '/uuid-generator', icon: Settings2 },
@@ -80,6 +82,12 @@ const primaryActions = [
     description: 'Inspect view configs, markers, layouts, and related records.',
     href: '/viewconfig-search',
     icon: Layers,
+  },
+  {
+    title: '404 Diagnostics',
+    description: 'Diagnose localhost 404s, identify likely database issues, and copy fix SQL.',
+    href: '/404-diagnostics',
+    icon: ShieldAlert,
   },
   {
     title: 'SQL Orchestrator',

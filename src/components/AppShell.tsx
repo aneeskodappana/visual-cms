@@ -16,6 +16,7 @@ import {
   Search,
   Server,
   Settings2,
+  ShieldAlert,
   SquareCode,
 } from 'lucide-react';
 import { DatabaseSelectorModal } from '@/components/DatabaseSelectorModal';
@@ -43,6 +44,7 @@ const navGroups = [
   {
     title: 'Utilities',
     items: [
+      { label: '404 Diagnostics', href: '/404-diagnostics', icon: ShieldAlert },
       { label: 'SQL Orchestrator', href: '/sql-orchestrator', icon: SquareCode },
       { label: 'SQL Value Editor', href: '/sql-editor', icon: FileCode2 },
       { label: 'UUID Generator', href: '/uuid-generator', icon: Settings2 },

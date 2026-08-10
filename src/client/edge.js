@@ -601,7 +601,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "C:\\Users\\akodappana\\Captivate\\visual-cms\\src\\client",
+      "value": "C:\\Users\\rv\\Documents\\Captivate\\visual-cms\\src\\client",
       "fromEnvVar": null
     },
     "config": {
@@ -625,12 +625,11 @@ const config = {
     "previewFeatures": [
       "postgresqlExtensions"
     ],
-    "sourceFilePath": "C:\\Users\\akodappana\\Captivate\\visual-cms\\prisma\\schema.prisma",
+    "sourceFilePath": "C:\\Users\\rv\\Documents\\Captivate\\visual-cms\\prisma\\schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
-    "rootEnvPath": null,
-    "schemaEnvPath": "../../.env"
+    "rootEnvPath": null
   },
   "relativePath": "../../prisma",
   "clientVersion": "5.22.0",
